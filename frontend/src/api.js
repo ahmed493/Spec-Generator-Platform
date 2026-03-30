@@ -1,0 +1,97 @@
+import axios from 'axios'
+
+const API_BASE = '/api'
+
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+})
+
+// Health
+export const healthCheck = () => api.get('/health')
+
+// Connections
+export const getConnections = () => api.get('/connections')
+export const connectGitHub = (token) =>
+  api.post('/connect/github', { token })
+export const connectPowerBI = (tenant_id, client_id, client_secret) =>
+  api.post('/connect/powerbi', { tenant_id, client_id, client_secret })
+export const disconnectSource = (source) =>
+  api.post('/disconnect', { source })
+
+// GitHub
+export const getGitHubUser = () => api.get('/github/user')
+export const getGitHubRepos = () => api.get('/github/repos')
+
+export const getRepoStructure = (owner, repoName) =>
+  api.post('/github/repo-structure', { owner, repo_name: repoName })
+
+export const getRepoMetadata = (owner, repoName) =>
+  api.post('/github/repo-metadata', { owner, repo_name: repoName })
+
+// Power BI
+export const getPowerBIWorkspaces = () => api.get('/powerbi/workspaces')
+export const getPowerBIDatasets = (workspaceId) =>
+  api.post('/powerbi/datasets', { workspace_id: workspaceId })
+export const getPowerBIReports = (workspaceId) =>
+  api.post('/powerbi/reports', { workspace_id: workspaceId })
+export const getPowerBIDatasetTables = (workspaceId, datasetId) =>
+  api.post('/powerbi/dataset-tables', { workspace_id: workspaceId, dataset_id: datasetId })
+export const getPowerBIDataflows = (workspaceId) =>
+  api.post('/powerbi/dataflows', { workspace_id: workspaceId })
+export const getPowerBIWorkspaceMetadata = (workspaceId) =>
+  api.post('/powerbi/workspace-metadata', { workspace_id: workspaceId })
+
+// Spec Generation
+export const generateSpec = (owner, repoName) =>
+  api.post('/generate-spec', { owner, repo_name: repoName })
+
+// Chat
+export const chat = (question, repoName = null) =>
+  api.post('/chat', { question, repo_name: repoName })
+
+// ================= POSTGRESQL =================
+export const connectPostgreSQL = (host, port, database, user, password) =>
+  api.post('/connect/postgresql', { host, port, database, user, password })
+
+export const getPostgreSQLSchemas = () => api.get('/postgresql/schemas')
+export const getPostgreSQLTables = (schema = 'public') =>
+  api.post('/postgresql/tables', { schema })
+export const getPostgreSQLColumns = (schema = 'public') =>
+  api.post('/postgresql/columns', { schema })
+export const getPostgreSQLForeignKeys = (schema = 'public') =>
+  api.post('/postgresql/foreign-keys', { schema })
+export const getPostgreSQLSchemaMetadata = (schema = 'public') =>
+  api.post('/postgresql/schema-metadata', { schema })
+
+// ================= BIGQUERY =================
+export const connectBigQuery = (service_account_json) =>
+  api.post('/connect/bigquery', { service_account_json })
+
+export const getBigQueryDatasets = () => api.get('/bigquery/datasets')
+export const getBigQueryTables = (dataset_id) =>
+  api.post('/bigquery/tables', { dataset_id })
+export const getBigQueryTableSchema = (dataset_id, table_id) =>
+  api.post('/bigquery/table-schema', { dataset_id, table_id })
+export const previewBigQueryTable = (dataset_id, table_id) =>
+  api.post('/bigquery/preview', { dataset_id, table_id })
+export const getBigQueryDatasetMetadata = (dataset_id) =>
+  api.post('/bigquery/dataset-metadata', { dataset_id })
+
+// ================= GCS =================
+export const connectGCS = (service_account_json) =>
+  api.post('/connect/gcs', { service_account_json })
+
+export const getGCSBuckets = () => api.get('/gcs/buckets')
+export const getGCSBlobs = (bucket_name, prefix = '') =>
+  api.post('/gcs/blobs', { bucket_name, prefix })
+export const getGCSCSVHeader = (bucket_name, blob_name) =>
+  api.post('/gcs/csv-header', { bucket_name, blob_name })
+export const getGCSJSONStructure = (bucket_name, blob_name) =>
+  api.post('/gcs/json-structure', { bucket_name, blob_name })
+export const getGCSBucketMetadata = (bucket_name, prefix = '') =>
+  api.post('/gcs/bucket-metadata', { bucket_name, prefix })
+
+export default api
