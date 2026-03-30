@@ -17,9 +17,7 @@ spec-generator/
 │   │   └── spec_agent.py    # Spec generation agent
 │   └── config/
 │       └── settings.py      # Configuration
-├── templates/
 ├── requirements.txt
-├── .env.example
 └── README.md
 ```
 
@@ -32,32 +30,14 @@ pip install -r requirements.txt
 
 ## Configuration
 
-1. Copier `.env.example` en `.env`:
-```bash
-cp .env.example .env
-```
-
-2. Configurer les variables:
+1. Créez un fichier `.env` à la racine du projet et configurez les variables nécessaires :
 ```env
-# GitHub Token (requis)
+# GitHub Token
 GITHUB_TOKEN=ghp_your_token_here
 
 # LLM Provider: "ollama", "openai", ou "anthropic"
-LLM_PROVIDER=ollama
+LLM_PROVIDER=openai
 
-# Si Ollama (local)
-OLLAMA_MODEL=llama3.1
-```
-
-## Lancer Ollama (si pas déjà fait)
-
-```bash
-# Télécharger un modèle
-ollama pull llama3.1
-
-# Vérifier qu'Ollama tourne
-ollama list
-```
 
 ## Lancer le serveur
 
@@ -104,7 +84,7 @@ curl -X POST http://localhost:8000/api/chat \
 
 ## Changer de LLM
 
-Dans `.env`:
+Dans `.env` :
 ```env
 # Pour OpenAI
 LLM_PROVIDER=openai
@@ -114,11 +94,3 @@ OPENAI_API_KEY=sk-your-key
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-your-key
 ```
-
-## Prochaines étapes
-
-- [ ] Ajouter MCP BigQuery
-- [ ] Ajouter MCP PostgreSQL
-- [ ] Ajouter MCP Power BI
-- [ ] Ajouter MCP GCS
-- [ ] Frontend React/Vue
