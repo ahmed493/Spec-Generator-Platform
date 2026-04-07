@@ -48,9 +48,62 @@ export const getPowerBIWorkspaceMetadata = (workspaceId) =>
 export const generateSpec = (owner, repoName) =>
   api.post('/generate-spec', { owner, repo_name: repoName })
 
+export const generateSpecFromTemplate = (owner, repoName, templateFile) => {
+  const formData = new FormData()
+  formData.append('owner', owner)
+  formData.append('repo_name', repoName)
+  formData.append('template_file', templateFile)
+  return axios.post(`${API_BASE}/generate-spec-from-template`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 // Chat
 export const chat = (question, repoName = null) =>
   api.post('/chat', { question, repo_name: repoName })
+
+// ================= PROJECTS =================
+export const getProjects = () => api.get('/projects')
+export const createProject = (name, description = '') =>
+  api.post('/projects', { name, description })
+export const getProject = (projectId) => api.get(`/projects/${projectId}`)
+export const updateProject = (projectId, data) =>
+  api.put(`/projects/${projectId}`, data)
+export const deleteProject = (projectId) =>
+  api.delete(`/projects/${projectId}`)
+
+// Project Sources
+export const addProjectSource = (projectId, type, label = '', config = {}) =>
+  api.post(`/projects/${projectId}/sources`, { type, label, config })
+export const removeProjectSource = (projectId, sourceId) =>
+  api.delete(`/projects/${projectId}/sources/${sourceId}`)
+export const getSourceTypes = () => api.get('/source-types')
+
+// ================= PIPELINE (step-by-step) =================
+export const pipelineTemplate = (projectId, templateFile) => {
+  const formData = new FormData()
+  formData.append('template_file', templateFile)
+  return axios.post(`${API_BASE}/projects/${projectId}/pipeline/template`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+export const pipelineExtract = (projectId, placeholders) =>
+  api.post(`/projects/${projectId}/pipeline/extract`, { placeholders })
+export const pipelineMap = (projectId, values) =>
+  api.post(`/projects/${projectId}/pipeline/map`, { values })
+export const pipelineExport = (projectId, format = 'markdown') =>
+  api.post(`/projects/${projectId}/pipeline/export`, { format })
+export const pipelineGetState = (projectId) =>
+  api.get(`/projects/${projectId}/pipeline/state`)
+
+// ================= PROJECT CHAT =================
+export const projectChat = (projectId, question, pipelineStep = '', placeholders = [], extractedValues = {}) =>
+  api.post(`/projects/${projectId}/chat`, {
+    question,
+    pipeline_step: pipelineStep,
+    placeholders,
+    extracted_values: extractedValues,
+  })
 
 // ================= POSTGRESQL =================
 export const connectPostgreSQL = (host, port, database, user, password) =>

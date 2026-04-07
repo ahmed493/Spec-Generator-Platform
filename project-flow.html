@@ -1,0 +1,1362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <title>SpecGen — Multi-Source Projects</title>
+  <style>
+    /* =====================================================
+       CSS VARIABLES
+    ===================================================== */
+    :root {
+      --bg-deep:          #020818;
+      --bg-surface:       rgba(255,255,255,0.025);
+      --bg-surface-hover: rgba(255,255,255,0.045);
+      --bg-elevated:      rgba(255,255,255,0.04);
+
+      --border:           rgba(255,255,255,0.07);
+      --border-hover:     rgba(255,255,255,0.13);
+      --border-active:    rgba(91,156,245,0.35);
+
+      --text-primary:   #e8ecf1;
+      --text-secondary: #7a8ba0;
+      --text-tertiary:  #3a4f63;
+      --text-heading:   #f0f4f8;
+
+      --accent:       #5b9cf5;
+      --accent-dim:   rgba(91,156,245,0.10);
+      --accent-glow:  rgba(91,156,245,0.08);
+      --accent-light: #7ab4ff;
+
+      --success:      #34d399;
+      --success-dim:  rgba(52,211,153,0.10);
+      --danger:       #f87171;
+      --danger-dim:   rgba(248,113,113,0.10);
+      --warning:      #fbbf24;
+      --warning-dim:  rgba(251,191,36,0.10);
+
+      --radius:    10px;
+      --radius-sm: 6px;
+      --radius-lg: 16px;
+      --radius-xl: 22px;
+
+      --ease:     cubic-bezier(0.25,0.46,0.45,0.94);
+      --ease-out: cubic-bezier(0.16,1,0.3,1);
+      --t:        0.18s var(--ease);
+      --t-slow:   0.42s var(--ease-out);
+
+      --font-display: "Syne", sans-serif;
+      --font-body:    "Inter", -apple-system, sans-serif;
+
+      --topbar-h: 56px;
+    }
+
+    /* =====================================================
+       RESET & BASE
+    ===================================================== */
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html { font-size:14px; -webkit-font-smoothing:antialiased; scroll-behavior:smooth; }
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    button { font-family: var(--font-body); cursor:pointer; }
+    input, textarea { font-family: var(--font-body); }
+
+    /* =====================================================
+       AMBIENT BACKGROUND (star-field + grid)
+    ===================================================== */
+    body::before {
+      content:"";
+      position:fixed; inset:0; pointer-events:none; z-index:0;
+      background:
+        radial-gradient(1.5px 1.5px at 12% 22%, rgba(255,255,255,.07) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 38% 65%, rgba(255,255,255,.05) 50%, transparent 100%),
+        radial-gradient(1.3px 1.3px at 63% 11%, rgba(255,255,255,.06) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 79% 52%, rgba(255,255,255,.04) 50%, transparent 100%),
+        radial-gradient(1.5px 1.5px at  7% 79%, rgba(255,255,255,.05) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 91% 38%, rgba(255,255,255,.04) 50%, transparent 100%),
+        radial-gradient(1.2px 1.2px at 33% 87%, rgba(255,255,255,.06) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 67% 83%, rgba(255,255,255,.03) 50%, transparent 100%),
+        radial-gradient(1.5px 1.5px at 47% 46%, rgba(255,255,255,.04) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 21% 43%, rgba(255,255,255,.05) 50%, transparent 100%),
+        radial-gradient(1.2px 1.2px at 55% 71%, rgba(255,255,255,.04) 50%, transparent 100%),
+        radial-gradient(1px   1px   at 85% 19%, rgba(255,255,255,.05) 50%, transparent 100%);
+    }
+    body::after {
+      content:"";
+      position:fixed; inset:0; pointer-events:none; z-index:0;
+      background-image:
+        linear-gradient(rgba(255,255,255,.010) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,.010) 1px, transparent 1px);
+      background-size: 80px 80px;
+    }
+
+    /* =====================================================
+       TOPBAR
+    ===================================================== */
+    .topbar {
+      height: var(--topbar-h);
+      display:flex; align-items:center; gap:14px;
+      padding: 0 24px;
+      background: rgba(2,8,24,.88);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(20px);
+      position: sticky; top:0; z-index:200;
+    }
+    .tb-brand {
+      display:flex; align-items:center; gap:10px;
+      cursor:pointer; text-decoration:none;
+      flex-shrink:0;
+    }
+    .tb-brand-icon {
+      width:28px; height:28px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      border-radius:7px;
+      display:flex; align-items:center; justify-content:center;
+      box-shadow: 0 0 16px rgba(91,156,245,.25);
+      color:#020818;
+    }
+    .tb-brand-icon svg { width:13px; height:13px; }
+    .tb-brand-name {
+      font-family: var(--font-display);
+      font-size:15px; font-weight:700;
+      color: var(--text-heading);
+      letter-spacing:-.3px;
+    }
+    .tb-sep { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+    .tb-breadcrumb {
+      display:flex; align-items:center; gap:6px;
+      font-size:13px; color:var(--text-secondary);
+    }
+    .tb-breadcrumb .bc-link { cursor:pointer; transition:color var(--t); }
+    .tb-breadcrumb .bc-link:hover { color:var(--text-primary); }
+    .tb-breadcrumb .bc-sep { color:var(--text-tertiary); font-size:11px; }
+    .tb-breadcrumb .bc-current { color:var(--text-primary); font-weight:500; }
+    .tb-spacer { flex:1; }
+    .tb-pill {
+      font-size:10.5px; font-family:var(--font-display); font-weight:600;
+      letter-spacing:.6px; text-transform:uppercase;
+      color:var(--accent); background:var(--accent-dim);
+      border:1px solid rgba(91,156,245,.18);
+      border-radius:20px; padding:3px 10px;
+    }
+
+    /* =====================================================
+       VIEWS
+    ===================================================== */
+    .view { display:none; }
+    .view.active { display:block; animation: fadeIn .2s ease both; }
+
+    /* =====================================================
+       DASHBOARD
+    ===================================================== */
+    .dashboard {
+      max-width:1080px; margin:0 auto;
+      padding: 48px 24px 100px;
+    }
+    .db-header {
+      display:flex; align-items:flex-end; justify-content:space-between;
+      flex-wrap:wrap; gap:16px;
+      margin-bottom:36px;
+    }
+    .db-header-text h1 {
+      font-family:var(--font-display);
+      font-size:27px; font-weight:800;
+      color:var(--text-heading); letter-spacing:-.5px;
+      margin-bottom:6px;
+    }
+    .db-header-text p { font-size:13.5px; color:var(--text-secondary); max-width:400px; }
+    .btn-new-project {
+      display:flex; align-items:center; gap:8px;
+      padding:10px 20px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-light));
+      border:none; border-radius:var(--radius);
+      color:#020818;
+      font-family:var(--font-display); font-size:13px; font-weight:700;
+      box-shadow: 0 4px 20px rgba(91,156,245,.22);
+      transition: opacity var(--t), box-shadow var(--t), transform var(--t);
+      white-space:nowrap;
+    }
+    .btn-new-project:hover { opacity:.88; box-shadow:0 6px 28px rgba(91,156,245,.38); transform:translateY(-1px); }
+    .btn-new-project svg { width:14px; height:14px; }
+
+    /* project cards grid */
+    .projects-grid {
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+      gap:14px;
+    }
+
+    /* "New project" placeholder card */
+    .card-add-project {
+      border:1.5px dashed rgba(91,156,245,.22);
+      border-radius:var(--radius-lg);
+      background:var(--accent-dim);
+      padding:32px 20px;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:12px; cursor:pointer;
+      min-height:158px; text-align:center;
+      transition: border-color var(--t), background var(--t), transform var(--t);
+    }
+    .card-add-project:hover {
+      border-color:rgba(91,156,245,.45);
+      background:rgba(91,156,245,.07);
+      transform:translateY(-2px);
+    }
+    .cap-icon {
+      width:42px; height:42px; border-radius:50%;
+      background:rgba(91,156,245,.1);
+      border:1px solid rgba(91,156,245,.22);
+      display:flex; align-items:center; justify-content:center;
+      color:var(--accent); font-size:22px;
+      transition:background var(--t), box-shadow var(--t);
+    }
+    .card-add-project:hover .cap-icon {
+      background:rgba(91,156,245,.18);
+      box-shadow:0 0 18px rgba(91,156,245,.22);
+    }
+    .cap-label {
+      font-family:var(--font-display); font-size:13.5px; font-weight:600;
+      color:var(--accent);
+    }
+
+    /* regular project card */
+    .project-card {
+      background:var(--bg-surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:20px 20px 16px;
+      cursor:pointer; display:flex; flex-direction:column; gap:14px;
+      min-height:158px;
+      transition:border-color var(--t), background var(--t), box-shadow var(--t), transform var(--t);
+    }
+    .project-card:hover {
+      border-color:var(--border-hover);
+      background:var(--bg-surface-hover);
+      box-shadow:0 4px 24px rgba(0,0,0,.22), 0 0 0 1px rgba(91,156,245,.05);
+      transform:translateY(-2px);
+    }
+    .pc-head { display:flex; align-items:flex-start; gap:12px; }
+    .pc-avatar {
+      width:36px; height:36px; border-radius:9px; flex-shrink:0;
+      background:linear-gradient(135deg,rgba(91,156,245,.18),rgba(122,180,255,.08));
+      border:1px solid rgba(91,156,245,.18);
+      display:flex; align-items:center; justify-content:center;
+      font-family:var(--font-display); font-size:13px; font-weight:700;
+      color:var(--accent);
+    }
+    .pc-meta { flex:1; min-width:0; }
+    .pc-name {
+      font-family:var(--font-display); font-size:14px; font-weight:700;
+      color:var(--text-heading); letter-spacing:-.2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      margin-bottom:3px;
+    }
+    .pc-desc { font-size:12px; color:var(--text-secondary); line-height:1.5; }
+    .pc-foot {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-top:auto;
+    }
+    .pc-sources-badge {
+      font-size:11px; color:var(--text-secondary);
+      display:flex; align-items:center; gap:5px;
+    }
+    .pc-sources-badge .dot {
+      width:6px; height:6px; border-radius:50%;
+      background:var(--accent); opacity:.6;
+    }
+    .pc-open-btn {
+      font-size:11.5px; font-weight:600; color:var(--accent);
+      background:var(--accent-dim); border:1px solid rgba(91,156,245,.2);
+      border-radius:var(--radius-sm); padding:4px 12px;
+      transition:background var(--t), border-color var(--t);
+    }
+    .pc-open-btn:hover { background:rgba(91,156,245,.17); border-color:rgba(91,156,245,.38); }
+
+    /* =====================================================
+       WORKSPACE
+    ===================================================== */
+    .workspace {
+      max-width:1080px; margin:0 auto;
+      padding:36px 24px 100px;
+      display:flex; gap:24px; align-items:flex-start;
+    }
+
+    /* — aside — */
+    .ws-aside {
+      width:230px; flex-shrink:0;
+      display:flex; flex-direction:column; gap:14px;
+      position:sticky; top:calc(var(--topbar-h) + 20px);
+    }
+    .aside-panel {
+      background:var(--bg-surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:18px;
+    }
+    .ap-label {
+      font-size:10px; font-weight:600; letter-spacing:1px;
+      text-transform:uppercase; color:var(--text-tertiary);
+      margin-bottom:10px;
+    }
+    .ap-name {
+      font-family:var(--font-display); font-size:15px; font-weight:700;
+      color:var(--text-heading); letter-spacing:-.3px; margin-bottom:5px;
+    }
+    .ap-desc { font-size:12px; color:var(--text-secondary); line-height:1.45; }
+    .stats-list { display:flex; flex-direction:column; gap:8px; }
+    .stat-row { display:flex; justify-content:space-between; font-size:12px; }
+    .stat-k { color:var(--text-secondary); }
+    .stat-v { color:var(--text-primary); font-weight:600; }
+    .stat-v.green { color:var(--success); }
+
+    .btn-generate {
+      width:100%; padding:12px;
+      background:linear-gradient(135deg, var(--accent), var(--accent-light));
+      border:none; border-radius:var(--radius);
+      color:#020818; font-family:var(--font-display); font-size:13.5px; font-weight:700;
+      letter-spacing:-.2px;
+      box-shadow:0 4px 20px rgba(91,156,245,.22);
+      transition:opacity var(--t), box-shadow var(--t), transform var(--t);
+    }
+    .btn-generate:hover:not(:disabled) {
+      opacity:.88; box-shadow:0 6px 28px rgba(91,156,245,.38); transform:translateY(-1px);
+    }
+    .btn-generate:disabled {
+      opacity:.28; cursor:not-allowed; transform:none; box-shadow:none;
+    }
+    .gen-hint { font-size:11.5px; color:var(--text-tertiary); text-align:center; line-height:1.5; }
+
+    /* — main — */
+    .ws-main { flex:1; min-width:0; }
+    .sources-header {
+      display:flex; align-items:center; justify-content:space-between;
+      margin-bottom:20px;
+    }
+    .sources-heading {
+      font-family:var(--font-display); font-size:19px; font-weight:700;
+      color:var(--text-heading); letter-spacing:-.4px;
+    }
+    .sources-count {
+      margin-left:9px; vertical-align:middle;
+      font-size:11px; font-weight:600; color:var(--text-secondary);
+      background:var(--bg-elevated); border:1px solid var(--border);
+      border-radius:20px; padding:2px 9px;
+    }
+    .btn-add-source {
+      display:flex; align-items:center; gap:7px;
+      padding:8px 16px;
+      background:var(--accent-dim); border:1px solid rgba(91,156,245,.22);
+      border-radius:var(--radius); color:var(--accent);
+      font-size:13px; font-weight:600;
+      transition:background var(--t), border-color var(--t), box-shadow var(--t);
+      white-space:nowrap;
+    }
+    .btn-add-source:hover {
+      background:rgba(91,156,245,.16);
+      border-color:rgba(91,156,245,.38);
+      box-shadow:0 0 14px rgba(91,156,245,.12);
+    }
+    .btn-add-source svg { width:13px; height:13px; }
+
+    /* sources grid */
+    .sources-grid {
+      display:grid;
+      grid-template-columns:repeat(auto-fill, minmax(230px, 1fr));
+      gap:13px;
+    }
+
+    /* empty state */
+    .sources-empty {
+      grid-column:1/-1; text-align:center;
+      padding:60px 24px;
+      border:1.5px dashed rgba(255,255,255,.065);
+      border-radius:var(--radius-lg);
+      background:rgba(255,255,255,.008);
+      animation:fadeIn .3s ease both;
+    }
+    .se-icon {
+      width:52px; height:52px; margin:0 auto 16px;
+      border-radius:14px;
+      background:rgba(91,156,245,.06); border:1px solid rgba(91,156,245,.12);
+      display:flex; align-items:center; justify-content:center;
+      color:var(--accent); opacity:.75;
+    }
+    .se-title {
+      font-family:var(--font-display); font-size:15px; font-weight:700;
+      color:var(--text-primary); margin-bottom:8px;
+    }
+    .se-desc {
+      font-size:13px; color:var(--text-secondary);
+      max-width:310px; margin:0 auto 22px; line-height:1.6;
+    }
+    .se-cta {
+      display:inline-flex; align-items:center; gap:7px;
+      padding:9px 18px;
+      background:var(--accent-dim); border:1px solid rgba(91,156,245,.22);
+      border-radius:var(--radius); color:var(--accent);
+      font-size:13px; font-weight:600;
+      transition:background var(--t), border-color var(--t);
+    }
+    .se-cta:hover { background:rgba(91,156,245,.16); border-color:rgba(91,156,245,.38); }
+    .se-cta svg { width:12px; height:12px; }
+
+    /* source card */
+    .source-card {
+      background:var(--bg-surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); padding:17px;
+      display:flex; flex-direction:column; gap:14px;
+      transition:border-color var(--t), box-shadow var(--t), background var(--t);
+      animation:scaleIn .28s var(--ease-out) both;
+      position:relative;
+    }
+    .source-card:hover {
+      border-color:var(--border-hover);
+      background:var(--bg-surface-hover);
+      box-shadow:0 4px 20px rgba(0,0,0,.18),0 0 0 1px rgba(91,156,245,.04);
+    }
+    .sc-top { display:flex; align-items:flex-start; gap:12px; }
+    .sc-icon {
+      width:38px; height:38px; border-radius:10px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:18px; flex-shrink:0;
+    }
+    .sc-info { flex:1; min-width:0; }
+    .sc-label {
+      font-family:var(--font-display); font-size:13px; font-weight:700;
+      color:var(--text-heading); letter-spacing:-.2px;
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      margin-bottom:2px;
+    }
+    .sc-type { font-size:11px; color:var(--text-secondary); }
+    .sc-foot { display:flex; align-items:center; justify-content:space-between; }
+    .sc-status {
+      display:flex; align-items:center; gap:5px;
+      font-size:11.5px; font-weight:500;
+    }
+    .sc-status .sdot { width:7px; height:7px; border-radius:50%; }
+    .sc-status.connected { color:var(--success); }
+    .sc-status.connected .sdot { background:var(--success); box-shadow:0 0 6px rgba(52,211,153,.5); }
+    .sc-status.pending  { color:var(--warning); }
+    .sc-status.pending  .sdot { background:var(--warning); }
+    .sc-status.error    { color:var(--danger); }
+    .sc-status.error    .sdot { background:var(--danger); }
+    .sc-actions { display:flex; gap:6px; }
+    .sc-btn {
+      width:26px; height:26px; border-radius:var(--radius-sm);
+      border:1px solid var(--border); background:transparent;
+      color:var(--text-secondary);
+      display:flex; align-items:center; justify-content:center;
+      transition:color var(--t), border-color var(--t), background var(--t);
+    }
+    .sc-btn:hover { color:var(--text-primary); border-color:var(--border-hover); background:var(--bg-elevated); }
+    .sc-btn.del:hover { color:var(--danger); border-color:rgba(248,113,113,.3); background:var(--danger-dim); }
+    .sc-btn svg { width:12px; height:12px; }
+
+    /* =====================================================
+       MODALS
+    ===================================================== */
+    .modal-bd {
+      position:fixed; inset:0; z-index:500;
+      background:rgba(2,8,24,.78); backdrop-filter:blur(10px);
+      display:flex; align-items:center; justify-content:center;
+      padding:24px;
+      opacity:0; pointer-events:none;
+      transition:opacity .2s ease;
+    }
+    .modal-bd.open { opacity:1; pointer-events:all; }
+    .modal-box {
+      background:rgba(5,13,34,.97);
+      border:1px solid rgba(255,255,255,.1);
+      border-radius:var(--radius-xl);
+      box-shadow:0 28px 80px rgba(0,0,0,.65), 0 0 0 1px rgba(91,156,245,.07);
+      width:100%;
+      transform:translateY(14px) scale(.975);
+      transition:transform .26s var(--ease-out);
+    }
+    .modal-bd.open .modal-box { transform:translateY(0) scale(1); }
+    .m-head {
+      padding:20px 22px 16px;
+      border-bottom:1px solid var(--border);
+      display:flex; align-items:center; justify-content:space-between;
+    }
+    .m-title {
+      font-family:var(--font-display); font-size:15px; font-weight:700;
+      color:var(--text-heading); letter-spacing:-.3px;
+    }
+    .m-close {
+      width:28px; height:28px; border-radius:7px;
+      border:1px solid var(--border); background:transparent;
+      color:var(--text-secondary);
+      display:flex; align-items:center; justify-content:center;
+      transition:color var(--t), border-color var(--t), background var(--t);
+    }
+    .m-close:hover { color:var(--text-primary); border-color:var(--border-hover); background:var(--bg-elevated); }
+    .m-close svg { width:11px; height:11px; }
+    .m-body { padding:20px 22px; }
+    .m-foot {
+      padding:14px 22px;
+      border-top:1px solid var(--border);
+      display:flex; gap:10px; justify-content:flex-end;
+    }
+
+    /* shared buttons */
+    .btn-primary {
+      padding:9px 20px;
+      background:linear-gradient(135deg,var(--accent),var(--accent-light));
+      border:none; border-radius:var(--radius);
+      color:#020818; font-family:var(--font-display); font-size:13px; font-weight:700;
+      box-shadow:0 4px 14px rgba(91,156,245,.18);
+      transition:opacity var(--t), box-shadow var(--t);
+    }
+    .btn-primary:hover { opacity:.87; box-shadow:0 4px 22px rgba(91,156,245,.35); }
+    .btn-secondary {
+      padding:9px 16px;
+      background:transparent; border:1px solid var(--border);
+      border-radius:var(--radius); color:var(--text-secondary);
+      font-size:13px; font-weight:500;
+      transition:color var(--t), border-color var(--t), background var(--t);
+    }
+    .btn-secondary:hover { color:var(--text-primary); border-color:var(--border-hover); background:var(--bg-elevated); }
+
+    /* form */
+    .form-group { margin-bottom:16px; }
+    .form-group:last-child { margin-bottom:0; }
+    .form-label {
+      display:block; font-size:12px; font-weight:600;
+      color:var(--text-secondary); letter-spacing:.3px;
+      margin-bottom:6px;
+    }
+    .form-input {
+      width:100%; padding:10px 13px;
+      background:rgba(255,255,255,.04); border:1px solid var(--border);
+      border-radius:var(--radius); color:var(--text-primary);
+      font-size:13.5px; outline:none;
+      transition:border-color var(--t), box-shadow var(--t);
+    }
+    .form-input:focus { border-color:var(--border-active); box-shadow:0 0 0 3px rgba(91,156,245,.09); }
+    .form-input::placeholder { color:var(--text-tertiary); }
+    textarea.form-input { resize:vertical; min-height:78px; }
+    .form-error { border-color:var(--danger) !important; }
+
+    /* =====================================================
+       MODAL: NEW PROJECT
+    ===================================================== */
+    #m-new-project .modal-box { max-width:450px; }
+
+    /* =====================================================
+       MODAL: SOURCE SELECTOR
+    ===================================================== */
+    #m-source-selector .modal-box { max-width:620px; }
+
+    .source-type-grid {
+      display:grid; grid-template-columns:repeat(4,1fr); gap:9px;
+      margin-bottom:0;
+    }
+    .st-card {
+      padding:15px 8px; text-align:center;
+      background:var(--bg-surface); border:1px solid var(--border);
+      border-radius:var(--radius-lg); cursor:pointer;
+      display:flex; flex-direction:column; align-items:center; gap:8px;
+      transition:border-color var(--t), background var(--t), box-shadow var(--t), transform var(--t);
+    }
+    .st-card:hover {
+      border-color:var(--border-hover); background:var(--bg-surface-hover);
+      box-shadow:0 4px 16px rgba(0,0,0,.18); transform:translateY(-2px);
+    }
+    .st-card.selected {
+      border-color:var(--border-active); background:var(--accent-dim);
+      box-shadow:0 0 0 1px rgba(91,156,245,.18), 0 4px 16px rgba(91,156,245,.07);
+    }
+    .st-icon {
+      width:40px; height:40px; border-radius:11px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:20px; line-height:1;
+    }
+    .st-name { font-size:11px; font-weight:600; color:var(--text-secondary); line-height:1.3; }
+    .st-card.selected .st-name { color:var(--accent); }
+
+    /* source config section */
+    .src-config {
+      display:none;
+      margin-top:18px; padding-top:16px;
+      border-top:1px solid var(--border);
+    }
+    .src-config.visible { display:block; }
+    .src-config-head {
+      font-family:var(--font-display); font-size:13px; font-weight:700;
+      color:var(--text-heading); margin-bottom:14px;
+      display:flex; align-items:center; gap:8px;
+    }
+
+    /* =====================================================
+       MODAL: GENERATE
+    ===================================================== */
+    #m-generate .modal-box { max-width:500px; }
+
+    .gen-list { display:flex; flex-direction:column; gap:8px; margin-bottom:18px; }
+    .gen-row {
+      display:flex; align-items:center; gap:12px;
+      padding:10px 13px;
+      background:var(--bg-surface); border:1px solid var(--border);
+      border-radius:var(--radius);
+    }
+    .gen-row-icon {
+      width:28px; height:28px; border-radius:8px;
+      display:flex; align-items:center; justify-content:center;
+      font-size:15px; flex-shrink:0;
+    }
+    .gen-row-label { flex:1; font-size:13px; font-weight:500; color:var(--text-primary); }
+    .gen-row-type  { font-size:11px; color:var(--text-secondary); }
+
+    .gen-progress { display:none; flex-direction:column; gap:14px; text-align:center; padding:20px 0; }
+    .gen-progress.visible { display:flex; }
+    .gen-progress-lbl { font-size:13px; color:var(--text-secondary); }
+    .gen-bar-wrap { width:100%; height:3px; background:var(--bg-elevated); border-radius:3px; overflow:hidden; }
+    .gen-bar { height:100%; background:linear-gradient(90deg,var(--accent),var(--accent-light)); border-radius:3px; width:0%; transition:width .4s var(--ease-out); }
+
+    .gen-result {
+      display:none;
+      padding:22px; border-radius:var(--radius-lg);
+      background:var(--success-dim); border:1px solid rgba(52,211,153,.2);
+      text-align:center;
+    }
+    .gen-result.visible { display:block; }
+    .gen-result-icon { font-size:28px; margin-bottom:12px; }
+    .gen-result-title {
+      font-family:var(--font-display); font-size:15px; font-weight:700;
+      color:var(--success); margin-bottom:6px;
+    }
+    .gen-result-desc { font-size:13px; color:var(--text-secondary); line-height:1.6; }
+
+    .spinner {
+      width:28px; height:28px; margin:0 auto;
+      border:2.5px solid rgba(91,156,245,.14);
+      border-top-color:var(--accent);
+      border-radius:50%;
+      animation:spin .75s linear infinite;
+    }
+
+    /* =====================================================
+       ANIMATIONS
+    ===================================================== */
+    @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+    @keyframes fadeInUp { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes scaleIn  { from{opacity:0;transform:scale(.95) translateY(6px)} to{opacity:1;transform:scale(1) translateY(0)} }
+    @keyframes spin     { to{transform:rotate(360deg)} }
+
+    /* =====================================================
+       RESPONSIVE
+    ===================================================== */
+    @media (max-width:820px) {
+      .workspace { flex-direction:column; }
+      .ws-aside  { width:100%; position:static; }
+      .source-type-grid { grid-template-columns:repeat(3,1fr); }
+    }
+    @media (max-width:540px) {
+      .source-type-grid { grid-template-columns:repeat(2,1fr); }
+      .projects-grid    { grid-template-columns:1fr; }
+      .dashboard,.workspace { padding-left:16px; padding-right:16px; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================================================
+       TOPBAR
+  =================================================== -->
+  <header class="topbar">
+    <div class="tb-brand" onclick="navDashboard()">
+      <div class="tb-brand-icon">
+        <!-- document lines icon -->
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 4h12M4 8h8M6 12h4"/>
+        </svg>
+      </div>
+      <span class="tb-brand-name">SpecGen</span>
+    </div>
+    <div class="tb-sep"></div>
+    <div class="tb-breadcrumb" id="tb-breadcrumb">
+      <span>Projects</span>
+    </div>
+    <div class="tb-spacer"></div>
+    <span class="tb-pill">AI-Powered</span>
+  </header>
+
+  <!-- ===================================================
+       VIEW — DASHBOARD
+  =================================================== -->
+  <div id="view-dashboard" class="view active">
+    <div class="dashboard">
+      <div class="db-header">
+        <div class="db-header-text">
+          <h1>Your Projects</h1>
+          <p>Each project aggregates multiple sources and generates a unified specification using AI.</p>
+        </div>
+        <button class="btn-new-project" onclick="openNewProjectModal()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/>
+          </svg>
+          New Project
+        </button>
+      </div>
+      <div class="projects-grid" id="projects-grid"><!-- rendered by JS --></div>
+    </div>
+  </div>
+
+  <!-- ===================================================
+       VIEW — WORKSPACE
+  =================================================== -->
+  <div id="view-workspace" class="view">
+    <div class="workspace">
+
+      <!-- aside -->
+      <aside class="ws-aside">
+        <div class="aside-panel">
+          <div class="ap-label">Project</div>
+          <div class="ap-name" id="ws-name">—</div>
+          <div class="ap-desc" id="ws-desc"></div>
+        </div>
+        <div class="aside-panel stats-list">
+          <div class="stat-row">
+            <span class="stat-k">Total sources</span>
+            <span class="stat-v" id="ws-total">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-k">Connected</span>
+            <span class="stat-v green" id="ws-connected">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-k">Created</span>
+            <span class="stat-v" id="ws-created">—</span>
+          </div>
+        </div>
+        <button class="btn-generate" id="btn-generate" disabled onclick="openGenerateModal()">
+          Generate Spec →
+        </button>
+        <p class="gen-hint" id="gen-hint">Connect at least one source to generate.</p>
+      </aside>
+
+      <!-- main -->
+      <main class="ws-main">
+        <div class="sources-header">
+          <div>
+            <span class="sources-heading">Sources</span>
+            <span class="sources-count" id="sources-count">0</span>
+          </div>
+          <button class="btn-add-source" onclick="openSourceSelector()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+              <line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/>
+            </svg>
+            Add Source
+          </button>
+        </div>
+        <div class="sources-grid" id="sources-grid"><!-- rendered by JS --></div>
+      </main>
+
+    </div>
+  </div>
+
+</div><!-- #app -->
+
+<!-- ===================================================
+     MODAL — NEW PROJECT
+=================================================== -->
+<div class="modal-bd" id="m-new-project" onclick="bdClick(event,'m-new-project')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="m-head">
+      <span class="m-title">New Project</span>
+      <button class="m-close" onclick="closeModal('m-new-project')">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+        </svg>
+      </button>
+    </div>
+    <div class="m-body">
+      <div class="form-group">
+        <label class="form-label" for="np-name">Project name <span style="color:var(--danger)">*</span></label>
+        <input id="np-name" class="form-input" type="text" placeholder="e.g. Payments API v2, Data Pipeline Spec…"
+               autocomplete="off" onkeydown="if(event.key==='Enter')createProject()" />
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="np-desc">
+          Description <span style="color:var(--text-tertiary);font-weight:400">(optional)</span>
+        </label>
+        <textarea id="np-desc" class="form-input" placeholder="What is this project about?"></textarea>
+      </div>
+    </div>
+    <div class="m-foot">
+      <button class="btn-secondary" onclick="closeModal('m-new-project')">Cancel</button>
+      <button class="btn-primary" onclick="createProject()">Create Project</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     MODAL — SOURCE SELECTOR
+=================================================== -->
+<div class="modal-bd" id="m-source-selector" onclick="bdClick(event,'m-source-selector')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="m-head">
+      <span class="m-title">Add a Source</span>
+      <button class="m-close" onclick="closeModal('m-source-selector')">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+        </svg>
+      </button>
+    </div>
+    <div class="m-body">
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:13px;">
+        Pick the type of source you want to connect to this project:
+      </p>
+      <div class="source-type-grid" id="st-grid"><!-- rendered by JS --></div>
+      <div class="src-config" id="src-config">
+        <div class="src-config-head" id="src-config-head">Configure source</div>
+        <div id="src-config-fields"></div>
+      </div>
+    </div>
+    <div class="m-foot" id="src-modal-foot">
+      <button class="btn-secondary" onclick="closeModal('m-source-selector')">Cancel</button>
+      <button class="btn-primary" id="btn-connect" style="display:none" onclick="connectSource()">
+        Connect Source
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     MODAL — GENERATE
+=================================================== -->
+<div class="modal-bd" id="m-generate" onclick="bdClick(event,'m-generate')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <div class="m-head">
+      <span class="m-title">Generate Specification</span>
+      <button class="m-close" onclick="closeModal('m-generate')">
+        <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+        </svg>
+      </button>
+    </div>
+    <div class="m-body">
+      <p style="font-size:12px;color:var(--text-secondary);margin-bottom:12px;">
+        The following sources will be combined as context for the LLM pipeline:
+      </p>
+      <div class="gen-list" id="gen-list"><!-- rendered by JS --></div>
+
+      <div class="gen-progress" id="gen-progress">
+        <div class="spinner"></div>
+        <div class="gen-progress-lbl" id="gen-lbl">Initializing…</div>
+        <div class="gen-bar-wrap"><div class="gen-bar" id="gen-bar"></div></div>
+      </div>
+
+      <div class="gen-result" id="gen-result">
+        <div class="gen-result-icon">✅</div>
+        <div class="gen-result-title">Specification Generated!</div>
+        <div class="gen-result-desc">
+          Your multi-source specification has been composed. In the full platform it would
+          now open in the Spec Viewer for review, export, or further editing.
+        </div>
+      </div>
+    </div>
+    <div class="m-foot" id="gen-foot">
+      <button class="btn-secondary" onclick="closeModal('m-generate')">Cancel</button>
+      <button class="btn-primary" id="btn-run-gen" onclick="runGenerate()">Generate →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================================================
+     JAVASCRIPT
+=================================================== -->
+<script>
+/* ----------------------------------------------------------
+   STATE
+---------------------------------------------------------- */
+const state = {
+  view: 'dashboard',
+  projects: [],
+  currentProject: null,
+  selectedType: null,
+};
+
+/* ----------------------------------------------------------
+   SOURCE TYPE DEFINITIONS
+---------------------------------------------------------- */
+const TYPES = [
+  {
+    id: 'github', name: 'GitHub Repo', emoji: '🐙',
+    bg: 'rgba(31,41,55,.55)',
+    fields: [
+      { id:'url', label:'Repository URL', ph:'https://github.com/org/repo', multi:false },
+      { id:'branch', label:'Branch (optional)', ph:'main', multi:false },
+    ],
+  },
+  {
+    id: 'pdf', name: 'PDF File', emoji: '📄',
+    bg: 'rgba(220,38,38,.14)',
+    fields: [
+      { id:'name', label:'File name or path', ph:'template.pdf', multi:false },
+    ],
+  },
+  {
+    id: 'notion', name: 'Notion Page', emoji: '📝',
+    bg: 'rgba(55,65,81,.45)',
+    fields: [
+      { id:'url', label:'Notion page URL', ph:'https://notion.so/…', multi:false },
+    ],
+  },
+  {
+    id: 'googledoc', name: 'Google Doc', emoji: '📑',
+    bg: 'rgba(29,78,216,.14)',
+    fields: [
+      { id:'url', label:'Google Doc URL', ph:'https://docs.google.com/…', multi:false },
+    ],
+  },
+  {
+    id: 'text', name: 'Plain Text', emoji: '📋',
+    bg: 'rgba(74,85,104,.28)',
+    fields: [
+      { id:'content', label:'Paste your text below', ph:'Enter or paste text here…', multi:true },
+    ],
+  },
+  {
+    id: 'api', name: 'REST API', emoji: '⚡',
+    bg: 'rgba(124,58,237,.14)',
+    fields: [
+      { id:'url', label:'Endpoint URL', ph:'https://api.example.com/spec', multi:false },
+      { id:'key', label:'API key (optional)', ph:'sk-…', multi:false },
+    ],
+  },
+  {
+    id: 'url', name: 'Web URL', emoji: '🔗',
+    bg: 'rgba(8,145,178,.13)',
+    fields: [
+      { id:'url', label:'Page URL', ph:'https://docs.example.com/overview', multi:false },
+    ],
+  },
+  {
+    id: 'database', name: 'DB Schema', emoji: '🗄️',
+    bg: 'rgba(6,95,70,.22)',
+    fields: [
+      { id:'conn', label:'Connection string', ph:'postgresql://localhost/mydb', multi:false },
+    ],
+  },
+];
+
+function getType(id) { return TYPES.find(t => t.id === id); }
+
+/* ----------------------------------------------------------
+   UTILS
+---------------------------------------------------------- */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function today() {
+  return new Date().toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+}
+
+function esc(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* ----------------------------------------------------------
+   NAVIGATION
+---------------------------------------------------------- */
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
+  state.view = name;
+}
+
+function navDashboard() {
+  state.currentProject = null;
+  setBreadcrumb(null);
+  renderDashboard();
+  showView('dashboard');
+}
+
+function openProject(id) {
+  const p = state.projects.find(x => x.id === id);
+  if (!p) return;
+  state.currentProject = p;
+  setBreadcrumb(p.name);
+  renderWorkspace();
+  showView('workspace');
+}
+
+function setBreadcrumb(projectName) {
+  const el = document.getElementById('tb-breadcrumb');
+  if (projectName) {
+    el.innerHTML =
+      `<span class="bc-link" onclick="navDashboard()">Projects</span>` +
+      `<span class="bc-sep">›</span>` +
+      `<span class="bc-current">${esc(projectName)}</span>`;
+  } else {
+    el.innerHTML = '<span>Projects</span>';
+  }
+}
+
+/* ----------------------------------------------------------
+   MODAL HELPERS
+---------------------------------------------------------- */
+function openModal(id) {
+  const el = document.getElementById(id);
+  el.classList.add('open');
+  // focus first interactive element
+  setTimeout(() => {
+    const f = el.querySelector('input, textarea');
+    if (f) f.focus();
+  }, 80);
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function bdClick(e, id) {
+  if (e.target === document.getElementById(id)) closeModal(id);
+}
+
+/* ----------------------------------------------------------
+   NEW PROJECT MODAL
+---------------------------------------------------------- */
+function openNewProjectModal() {
+  document.getElementById('np-name').value = '';
+  document.getElementById('np-desc').value = '';
+  document.getElementById('np-name').classList.remove('form-error');
+  openModal('m-new-project');
+}
+
+function createProject() {
+  const nameEl = document.getElementById('np-name');
+  const name = nameEl.value.trim();
+  if (!name) {
+    nameEl.classList.add('form-error');
+    nameEl.focus();
+    setTimeout(() => nameEl.classList.remove('form-error'), 1800);
+    return;
+  }
+  const desc = document.getElementById('np-desc').value.trim();
+  const project = { id: uid(), name, description: desc, sources: [], createdAt: today() };
+  state.projects.unshift(project);
+  closeModal('m-new-project');
+  openProject(project.id);
+}
+
+/* ----------------------------------------------------------
+   SOURCE SELECTOR MODAL
+---------------------------------------------------------- */
+function openSourceSelector() {
+  state.selectedType = null;
+  document.getElementById('src-config').classList.remove('visible');
+  document.getElementById('btn-connect').style.display = 'none';
+  renderTypeGrid();
+  openModal('m-source-selector');
+}
+
+function renderTypeGrid() {
+  document.getElementById('st-grid').innerHTML = TYPES.map(t =>
+    `<div class="st-card${state.selectedType === t.id ? ' selected' : ''}" onclick="selectType('${t.id}')">
+       <div class="st-icon" style="background:${t.bg}">${t.emoji}</div>
+       <div class="st-name">${esc(t.name)}</div>
+     </div>`
+  ).join('');
+}
+
+function selectType(id) {
+  state.selectedType = id;
+  renderTypeGrid();
+
+  const t = getType(id);
+  document.getElementById('src-config-head').innerHTML =
+    `<span style="font-size:16px">${t.emoji}</span> Configure ${esc(t.name)}`;
+
+  document.getElementById('src-config-fields').innerHTML = t.fields.map((f, i) =>
+    `<div class="form-group" style="margin-bottom:${i < t.fields.length - 1 ? '13' : '0'}px">
+       <label class="form-label" for="sf-${f.id}">${esc(f.label)}</label>
+       ${f.multi
+         ? `<textarea id="sf-${f.id}" class="form-input" placeholder="${esc(f.ph)}" style="min-height:78px"></textarea>`
+         : `<input id="sf-${f.id}" class="form-input" type="text" placeholder="${esc(f.ph)}" autocomplete="off" />`
+       }
+     </div>`
+  ).join('');
+
+  document.getElementById('src-config').classList.add('visible');
+  document.getElementById('btn-connect').style.display = 'inline-flex';
+
+  // auto-focus first field
+  setTimeout(() => {
+    const f = document.getElementById('src-config-fields').querySelector('input, textarea');
+    if (f) f.focus();
+  }, 50);
+}
+
+function connectSource() {
+  if (!state.currentProject || !state.selectedType) return;
+  const t = getType(state.selectedType);
+
+  const firstFieldEl = document.getElementById('sf-' + t.fields[0].id);
+  const rawVal = firstFieldEl ? firstFieldEl.value.trim() : '';
+  const label = rawVal || `${t.name} Source`;
+
+  const source = {
+    id: uid(),
+    type: t.id,
+    typeName: t.name,
+    label,
+    emoji: t.emoji,
+    bg: t.bg,
+    status: 'connected',
+  };
+
+  state.currentProject.sources.push(source);
+  closeModal('m-source-selector');
+  renderWorkspace();
+}
+
+/* ----------------------------------------------------------
+   REMOVE SOURCE
+---------------------------------------------------------- */
+function removeSource(srcId) {
+  if (!state.currentProject) return;
+  state.currentProject.sources = state.currentProject.sources.filter(s => s.id !== srcId);
+  renderWorkspace();
+}
+
+/* ----------------------------------------------------------
+   GENERATE MODAL
+---------------------------------------------------------- */
+function openGenerateModal() {
+  if (!state.currentProject) return;
+  const connected = state.currentProject.sources.filter(s => s.status === 'connected');
+
+  document.getElementById('gen-list').innerHTML = connected.map(s =>
+    `<div class="gen-row">
+       <div class="gen-row-icon" style="background:${s.bg}">${s.emoji}</div>
+       <span class="gen-row-label">${esc(s.label)}</span>
+       <span class="gen-row-type">${esc(s.typeName)}</span>
+     </div>`
+  ).join('');
+
+  // reset state
+  document.getElementById('gen-progress').classList.remove('visible');
+  document.getElementById('gen-result').classList.remove('visible');
+  document.getElementById('gen-bar').style.width = '0%';
+  document.getElementById('btn-run-gen').style.display = 'inline-flex';
+  document.getElementById('btn-run-gen').disabled = false;
+  document.getElementById('gen-foot').innerHTML =
+    `<button class="btn-secondary" onclick="closeModal('m-generate')">Cancel</button>
+     <button class="btn-primary" id="btn-run-gen" onclick="runGenerate()">Generate →</button>`;
+
+  openModal('m-generate');
+}
+
+function runGenerate() {
+  document.getElementById('btn-run-gen').style.display = 'none';
+  document.getElementById('gen-list').style.display = 'none';
+  document.getElementById('gen-progress').classList.add('visible');
+
+  const steps = [
+    { label: 'Reading sources…',           pct: 18 },
+    { label: 'Detecting template fields…', pct: 36 },
+    { label: 'Extracting field values…',   pct: 58 },
+    { label: 'Composing specification…',   pct: 78 },
+    { label: 'Validating output…',         pct: 92 },
+    { label: 'Done.',                      pct: 100 },
+  ];
+
+  let i = 0;
+  const bar = document.getElementById('gen-bar');
+  const lbl = document.getElementById('gen-lbl');
+
+  function tick() {
+    if (i >= steps.length) {
+      setTimeout(() => {
+        document.getElementById('gen-progress').classList.remove('visible');
+        document.getElementById('gen-result').classList.add('visible');
+        document.getElementById('gen-foot').innerHTML =
+          `<button class="btn-secondary" onclick="closeModal('m-generate');resetGenView()">Close</button>
+           <button class="btn-primary" onclick="closeModal('m-generate');resetGenView()">Open in Spec Editor →</button>`;
+      }, 350);
+      return;
+    }
+    lbl.textContent = steps[i].label;
+    bar.style.width = steps[i].pct + '%';
+    i++;
+    setTimeout(tick, 680);
+  }
+  tick();
+}
+
+function resetGenView() {
+  if (document.getElementById('gen-list'))
+    document.getElementById('gen-list').style.display = '';
+}
+
+/* ----------------------------------------------------------
+   RENDER: DASHBOARD
+---------------------------------------------------------- */
+function renderDashboard() {
+  const grid = document.getElementById('projects-grid');
+
+  let html = `
+    <div class="card-add-project" onclick="openNewProjectModal()" role="button" tabindex="0"
+         onkeydown="if(event.key==='Enter'||event.key===' ')openNewProjectModal()">
+      <div class="cap-icon">＋</div>
+      <span class="cap-label">New Project</span>
+    </div>`;
+
+  html += state.projects.map(p => {
+    const initials = p.name.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    const total = p.sources.length;
+    const conn  = p.sources.filter(s => s.status === 'connected').length;
+    const badge = total === 0
+      ? 'No sources yet'
+      : `${total} source${total !== 1 ? 's' : ''}${conn > 0 ? ` · ${conn} connected` : ''}`;
+    return `
+      <div class="project-card" onclick="openProject('${p.id}')" role="button" tabindex="0"
+           onkeydown="if(event.key==='Enter'||event.key===' ')openProject('${p.id}')">
+        <div class="pc-head">
+          <div class="pc-avatar">${esc(initials)}</div>
+          <div class="pc-meta">
+            <div class="pc-name">${esc(p.name)}</div>
+            <div class="pc-desc">${esc(p.description || 'No description')}</div>
+          </div>
+        </div>
+        <div class="pc-foot">
+          <span class="pc-sources-badge">
+            <span class="dot"></span>${esc(badge)}
+          </span>
+          <button class="pc-open-btn" onclick="event.stopPropagation();openProject('${p.id}')">Open →</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  grid.innerHTML = html;
+}
+
+/* ----------------------------------------------------------
+   RENDER: WORKSPACE
+---------------------------------------------------------- */
+function renderWorkspace() {
+  if (!state.currentProject) return;
+  const p = state.currentProject;
+  const connected = p.sources.filter(s => s.status === 'connected');
+
+  document.getElementById('ws-name').textContent      = p.name;
+  document.getElementById('ws-desc').textContent      = p.description || '';
+  document.getElementById('ws-total').textContent     = p.sources.length;
+  document.getElementById('ws-connected').textContent = connected.length;
+  document.getElementById('ws-created').textContent   = p.createdAt;
+  document.getElementById('sources-count').textContent = p.sources.length;
+
+  const btn  = document.getElementById('btn-generate');
+  const hint = document.getElementById('gen-hint');
+  if (connected.length > 0) {
+    btn.disabled = false;
+    hint.textContent = `${connected.length} source${connected.length !== 1 ? 's' : ''} ready — click to generate.`;
+  } else {
+    btn.disabled = true;
+    hint.textContent = 'Connect at least one source to generate.';
+  }
+
+  const grid = document.getElementById('sources-grid');
+
+  if (p.sources.length === 0) {
+    grid.innerHTML = `
+      <div class="sources-empty">
+        <div class="se-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/>
+            <polyline points="13 2 13 9 20 9"/>
+          </svg>
+        </div>
+        <div class="se-title">No sources yet</div>
+        <div class="se-desc">
+          Connect your first source to start building a specification.
+          You can combine as many sources as you need.
+        </div>
+        <button class="se-cta" onclick="openSourceSelector()">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <line x1="8" y1="3" x2="8" y2="13"/><line x1="3" y1="8" x2="13" y2="8"/>
+          </svg>
+          Connect your first source
+        </button>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = p.sources.map((s, i) => `
+    <div class="source-card" style="animation-delay:${i * 0.055}s">
+      <div class="sc-top">
+        <div class="sc-icon" style="background:${s.bg}">${s.emoji}</div>
+        <div class="sc-info">
+          <div class="sc-label">${esc(s.label)}</div>
+          <div class="sc-type">${esc(s.typeName)}</div>
+        </div>
+      </div>
+      <div class="sc-foot">
+        <div class="sc-status ${s.status}">
+          <span class="sdot"></span>
+          ${s.status.charAt(0).toUpperCase() + s.status.slice(1)}
+        </div>
+        <div class="sc-actions">
+          <button class="sc-btn del" title="Remove source" onclick="removeSource('${s.id}')">
+            <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <polyline points="2,3 10,3"/>
+              <path d="M4,3V2h4v1"/>
+              <path d="M3,3l.7,7.5a.5.5 0 00.5.5h3.6a.5.5 0 00.5-.5L9,3"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>`
+  ).join('');
+}
+
+/* ----------------------------------------------------------
+   INIT — seed one demo project so the dashboard isn't empty
+---------------------------------------------------------- */
+function init() {
+  state.projects = [
+    {
+      id: uid(),
+      name: 'Payments API v2',
+      description: 'Technical specification for the refactored payments microservice.',
+      createdAt: today(),
+      sources: [
+        {
+          id: uid(), type:'github', typeName:'GitHub Repo',
+          label:'github.com/org/payments-api',
+          emoji:'🐙', bg:'rgba(31,41,55,.55)', status:'connected',
+        },
+        {
+          id: uid(), type:'pdf', typeName:'PDF File',
+          label:'payments-spec-template.pdf',
+          emoji:'📄', bg:'rgba(220,38,38,.14)', status:'connected',
+        },
+      ],
+    },
+    {
+      id: uid(),
+      name: 'Data Pipeline Spec',
+      description: '',
+      createdAt: today(),
+      sources: [],
+    },
+  ];
+  renderDashboard();
+}
+
+init();
+</script>
+</body>
+</html>

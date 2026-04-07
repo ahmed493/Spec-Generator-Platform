@@ -25,3 +25,6 @@ asyncpg>=0.29.0
 # Utilities
 httpx>=0.25.0
 rich>=13.0.0
+
+# PDF parsing
+pdfplumber>=0.10.0
