@@ -50,7 +50,7 @@ class OrchestratorAgent:
                     "filled": [],
                     "missing": [],
                     "warnings": [],
-                    "report": "❌ Le fichier uploadé est vide ou illisible.",
+                    "report": "Le fichier uploadé est vide ou illisible.",
                 },
             }
 
@@ -69,7 +69,7 @@ class OrchestratorAgent:
                     "filled": [],
                     "missing": [],
                     "warnings": [],
-                    "report": "⚠️ Aucun champ à remplir détecté dans le template.",
+                    "report": "Aucun champ à remplir détecté dans le template.",
                 },
             }
 

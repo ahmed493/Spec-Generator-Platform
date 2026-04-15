@@ -9,7 +9,7 @@ ValidationAgent
 class ValidationAgent:
     """Validates that all detected template fields have been properly filled."""
 
-    MISSING_INDICATORS = {"non identifié", "n/a", "", "[missing", "❓"}
+    MISSING_INDICATORS = {"non identifié", "n/a", "", "[missing", "non identifie"}
 
     def validate(self, fields: list[dict], filled_values: dict[str, str]) -> dict:
         """
@@ -48,16 +48,16 @@ class ValidationAgent:
         total = len(fields)
         is_valid = len(missing) == 0
         report_lines = [
-            f"✅ Champs remplis ({len(filled)}/{total})",
+            f"Champs remplis ({len(filled)}/{total})",
         ]
         if missing:
-            report_lines.append(f"❌ Champs manquants ({len(missing)}): {', '.join(missing)}")
+            report_lines.append(f"Champs manquants ({len(missing)}): {', '.join(missing)}")
         if warnings:
-            report_lines.append(f"⚠️  Champs suspects ({len(warnings)}): {', '.join(warnings)}")
+            report_lines.append(f"Champs suspects ({len(warnings)}): {', '.join(warnings)}")
         if is_valid:
-            report_lines.append("✅ Validation réussie: tous les champs requis sont remplis.")
+            report_lines.append("Validation réussie: tous les champs requis sont remplis.")
         else:
-            report_lines.append("❌ Validation échouée: certains champs requis sont manquants.")
+            report_lines.append("Validation échouée: certains champs requis sont manquants.")
 
         return {
             "is_valid": is_valid,

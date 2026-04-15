@@ -4,8 +4,11 @@ Connects via service account JSON credentials.
 Extracts datasets, tables, columns, views, and preview rows.
 Uses google-cloud-bigquery client library.
 """
+import logging
 from typing import Optional
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class BigQueryMCPServer:
@@ -34,10 +37,10 @@ class BigQueryMCPServer:
             # Test connection by listing datasets (limit 1)
             list(self.client.list_datasets(max_results=1))
             self.connected = True
-            print(f"✅ Connected to BigQuery (project: {self.project_id})")
+            logger.info("Connected to BigQuery (project: %s)", self.project_id)
             return True
         except Exception as e:
-            print(f"❌ Failed to connect to BigQuery: {e}")
+            logger.error("Failed to connect to BigQuery: %s", e)
             self.connected = False
             return False
 
@@ -55,7 +58,7 @@ class BigQueryMCPServer:
                 })
             return datasets
         except Exception as e:
-            print(f"❌ Error listing datasets: {e}")
+            logger.error("Error listing datasets: %s", e)
             return []
 
     def get_tables(self, dataset_id: str) -> list[dict]:
@@ -73,7 +76,7 @@ class BigQueryMCPServer:
                 })
             return tables
         except Exception as e:
-            print(f"❌ Error listing tables: {e}")
+            logger.error("Error listing tables: %s", e)
             return []
 
     def get_table_schema(self, dataset_id: str, table_id: str) -> dict:
@@ -102,7 +105,7 @@ class BigQueryMCPServer:
                 "columns": columns,
             }
         except Exception as e:
-            print(f"❌ Error getting table schema: {e}")
+            logger.error("Error getting table schema: %s", e)
             return {}
 
     def preview_rows(self, dataset_id: str, table_id: str, max_rows: int = 5) -> list[dict]:
@@ -117,7 +120,7 @@ class BigQueryMCPServer:
                 rows.append(dict(row))
             return rows
         except Exception as e:
-            print(f"❌ Error previewing rows: {e}")
+            logger.error("Error previewing rows: %s", e)
             return []
 
     def get_dataset_metadata(self, dataset_id: str) -> dict:

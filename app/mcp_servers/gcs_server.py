@@ -4,9 +4,12 @@ Connects via service account JSON credentials.
 Lists buckets, blobs, detects file types, reads CSV/JSON headers.
 Uses google-cloud-storage client library.
 """
+import logging
 from typing import Optional
 import json
 import io
+
+logger = logging.getLogger(__name__)
 
 
 class GCSMCPServer:
@@ -34,10 +37,10 @@ class GCSMCPServer:
             # Test connection by listing buckets (limit 1)
             list(self.client.list_buckets(max_results=1))
             self.connected = True
-            print(f"✅ Connected to GCS (project: {self.project_id})")
+            logger.info("Connected to GCS (project: %s)", self.project_id)
             return True
         except Exception as e:
-            print(f"❌ Failed to connect to GCS: {e}")
+            logger.error("Failed to connect to GCS: %s", e)
             self.connected = False
             return False
 
@@ -56,7 +59,7 @@ class GCSMCPServer:
                 })
             return buckets
         except Exception as e:
-            print(f"❌ Error listing buckets: {e}")
+            logger.error("Error listing buckets: %s", e)
             return []
 
     def get_blobs(self, bucket_name: str, prefix: str = "", max_results: int = 100) -> list[dict]:
@@ -76,7 +79,7 @@ class GCSMCPServer:
                 })
             return blobs
         except Exception as e:
-            print(f"❌ Error listing blobs: {e}")
+            logger.error("Error listing blobs: %s", e)
             return []
 
     def _detect_file_type(self, filename: str) -> str:
@@ -115,7 +118,7 @@ class GCSMCPServer:
                 "columns_count": len(headers),
             }
         except Exception as e:
-            print(f"❌ Error reading CSV header: {e}")
+            logger.error("Error reading CSV header: %s", e)
             return {}
 
     def read_json_structure(self, bucket_name: str, blob_name: str) -> dict:
@@ -148,7 +151,7 @@ class GCSMCPServer:
                 "records_count": len(data) if isinstance(data, list) else 1,
             }
         except Exception as e:
-            print(f"❌ Error reading JSON structure: {e}")
+            logger.error("Error reading JSON structure: %s", e)
             return {}
 
     def get_bucket_metadata(self, bucket_name: str, prefix: str = "") -> dict:

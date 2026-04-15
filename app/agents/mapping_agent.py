@@ -30,7 +30,7 @@ avec les valeurs extraites automatiquement d'un repository de code.
 ## Instructions:
 - Reproduis fidèlement la structure du template (titres, sous-titres, tableaux).
 - Remplace les sections "à renseigner", les crochets [...], et les champs vides par les valeurs extraites.
-- Si une valeur est "Non identifié", indique "❓ Non identifié - à compléter manuellement".
+- Si une valeur est "Non identifié", indique "[Non identifié - à compléter manuellement]".
 - Garde le formatage professionnel en Markdown.
 - Les tableaux doivent être en Markdown.
 - Écris en français.

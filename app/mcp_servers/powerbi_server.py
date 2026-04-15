@@ -4,8 +4,11 @@ Connects via Azure AD Service Principal or Master User authentication.
 Extracts workspaces, datasets, tables, columns, DAX measures, and reports.
 Uses the Power BI REST API: https://learn.microsoft.com/en-us/rest/api/power-bi/
 """
+import logging
 import requests
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class PowerBIMCPServer:
@@ -41,13 +44,13 @@ class PowerBIMCPServer:
             # Test connection by listing workspaces
             test = self._get("/groups", params={"$top": 1})
             if test is not None:
-                print(f" Connected to Power BI (tenant: {self.tenant_id})")
+                logger.info("Connected to Power BI (tenant: %s)", self.tenant_id)
                 return True
             else:
                 self.connected = False
                 return False
         except Exception as e:
-            print(f" Failed to connect to Power BI: {e}")
+            logger.error("Failed to connect to Power BI: %s", e)
             self.connected = False
             return False
 
@@ -62,7 +65,7 @@ class PowerBIMCPServer:
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
-            print(f" Power BI API error on {endpoint}: {e}")
+            logger.error("Power BI API error on %s: %s", endpoint, e)
             return None
 
     # ============== WORKSPACES ==============

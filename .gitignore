@@ -1,8 +1,9 @@
 ﻿.env
-securite_analyse_risques.csv
-securite_analyse_risques_synthese.txt
 __pycache__/
 *.pyc
+*.db
 .vite/
 frontend/dist/
 frontend/node_modules/
+spec_generator.db
+*.db

@@ -2,10 +2,13 @@
 MCP Server for GitHub
 Extracts code, structure, and metadata from GitHub repositories
 """
+import logging
 from github import Github, Repository
 from typing import Optional
 import base64
 import json
+
+logger = logging.getLogger(__name__)
 
 
 class GitHubMCPServer:
@@ -22,11 +25,11 @@ class GitHubMCPServer:
             self.client = Github(self.token)
             # Test connection by getting user
             user = self.client.get_user()
-            print(f"✅ Connected to GitHub as: {user.login}")
+            logger.info("Connected to GitHub as: %s", user.login)
             self.connected = True
             return True
         except Exception as e:
-            print(f"❌ Failed to connect to GitHub: {e}")
+            logger.error("Failed to connect to GitHub: %s", e)
             self.connected = False
             return False
     
@@ -37,7 +40,7 @@ class GitHubMCPServer:
         try:
             return self.client.get_repo(f"{owner}/{repo_name}")
         except Exception as e:
-            print(f"❌ Failed to get repo {owner}/{repo_name}: {e}")
+            logger.error("Failed to get repo %s/%s: %s", owner, repo_name, e)
             return None
     
     def get_repo_structure(self, owner: str, repo_name: str, path: str = "") -> dict:
@@ -70,7 +73,7 @@ class GitHubMCPServer:
                     sub_contents = self.get_repo_structure(owner, repo_name, content.path)
                     item["children"] = sub_contents.get("files", [])
         except Exception as e:
-            print(f"⚠️ Error getting contents: {e}")
+            logger.warning("Error getting contents: %s", e)
         
         return structure
     
@@ -86,7 +89,7 @@ class GitHubMCPServer:
                 return base64.b64decode(content.content).decode("utf-8")
             return content.decoded_content.decode("utf-8")
         except Exception as e:
-            print(f"❌ Failed to get file {file_path}: {e}")
+            logger.error("Failed to get file %s: %s", file_path, e)
             return None
     
     def get_sql_files(self, owner: str, repo_name: str) -> list[dict]:
