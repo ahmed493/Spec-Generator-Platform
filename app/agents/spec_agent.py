@@ -101,7 +101,6 @@ class SpecAgent:
         return spec
 
     def _prepare_metadata_summary(self, metadata: dict) -> str:
-        # ...existing code...
         summary_parts = []
         summary_parts.append(f"Repository: {metadata.get('repo_name')}")
         summary_parts.append(f"Owner: {metadata.get('owner')}")
@@ -109,22 +108,39 @@ class SpecAgent:
         summary_parts.append(f"Languages: {metadata.get('languages')}")
         summary_parts.append(f"Topics: {metadata.get('topics')}")
         if metadata.get("readme"):
-            readme = metadata["readme"][:2000]
+            readme = metadata["readme"][:6000]
             summary_parts.append(f"\n## README:\n{readme}")
         if metadata.get("structure"):
             files = metadata["structure"].get("files", [])
-            file_list = [f["path"] for f in files[:30]]
-            summary_parts.append(f"\n## Structure:\n{file_list}")
+            file_list = [f["path"] for f in files]
+            summary_parts.append(f"\n## Structure ({len(file_list)} files):\n{file_list}")
         if metadata.get("sql_files"):
-            summary_parts.append(f"\n## SQL Files ({len(metadata['sql_files'])}):")
-            for sql in metadata["sql_files"][:5]:
-                content = sql.get("content", "")[:1000]
+            summary_parts.append(f"\n## SQL Files ({len(metadata['sql_files'])} — full content):")
+            for sql in metadata["sql_files"]:
+                content = sql.get("content", "")[:4000]
                 summary_parts.append(f"\n### {sql['path']}:\n```sql\n{content}\n```")
         if metadata.get("python_files"):
-            summary_parts.append(f"\n## Python Files ({len(metadata['python_files'])}):")
-            for py in metadata["python_files"][:5]:
-                content = py.get("content", "")[:1500]
+            summary_parts.append(f"\n## Python Files ({len(metadata['python_files'])} — full content):")
+            for py in metadata["python_files"]:
+                content = py.get("content", "")[:4000]
                 summary_parts.append(f"\n### {py['path']}:\n```python\n{content}\n```")
+        if metadata.get("yaml_files"):
+            summary_parts.append(f"\n## YAML/Config Files ({len(metadata['yaml_files'])}):")
+            for yf in metadata["yaml_files"]:
+                content = yf.get("content", "")[:2000]
+                summary_parts.append(f"\n### {yf['path']}:\n```yaml\n{content}\n```")
+        if metadata.get("json_files"):
+            summary_parts.append(f"\n## JSON Files ({len(metadata['json_files'])}):")
+            for jf in metadata["json_files"]:
+                content = jf.get("content", "")[:2000]
+                summary_parts.append(f"\n### {jf['path']}:\n```json\n{content}\n```")
+        if metadata.get("notebook_files"):
+            summary_parts.append(f"\n## Notebooks ({len(metadata['notebook_files'])}):")
+            for nb in metadata["notebook_files"]:
+                content = nb.get("content", "")[:3000]
+                summary_parts.append(f"\n### {nb['path']}:\n{content}")
+        if metadata.get("datasource_context"):
+            summary_parts.append(f"\n## Live Data Source Context:\n{metadata['datasource_context']}")
         return "\n".join(summary_parts)
 
     def chat(self, question: str, user_id: str, repo_name: str = None, context: str = "") -> dict:

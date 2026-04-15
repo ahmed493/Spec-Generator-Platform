@@ -656,6 +656,155 @@ def _get_source_content_for_project(project_id: str) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _build_datasource_context() -> str:
+    """
+    Pull live schema and content from all currently connected data sources.
+    Returns a rich text block injected into the LLM context for extraction and chat.
+    """
+    parts = []
+
+    # ── BigQuery ──────────────────────────────────────────────────────────────
+    bq = connections.get("bigquery")
+    if bq and bq.connected:
+        try:
+            datasets = bq.get_datasets()
+            parts.append(f"### BigQuery (project: {bq.project_id})")
+            parts.append(f"Datasets disponibles: {[d['dataset_id'] for d in datasets]}")
+            for ds in datasets[:5]:
+                did = ds["dataset_id"]
+                try:
+                    tables = bq.get_tables(did)
+                    parts.append(f"\n#### Dataset: {did}")
+                    for tbl in tables[:20]:
+                        tid = tbl["table_id"]
+                        try:
+                            schema = bq.get_table_schema(did, tid)
+                            cols = schema.get("columns", [])
+                            col_summary = ", ".join(
+                                f"{c['name']} ({c['type']})" for c in cols[:30]
+                            )
+                            rows = schema.get("num_rows", "?")
+                            parts.append(
+                                f"  Table `{did}.{tid}` [{tbl['table_type']}] "
+                                f"— {rows} lignes — colonnes: {col_summary}"
+                            )
+                        except Exception:
+                            parts.append(f"  Table `{did}.{tid}` — schema indisponible")
+                except Exception:
+                    parts.append(f"  Dataset {did} — tables indisponibles")
+        except Exception as e:
+            parts.append(f"### BigQuery — erreur: {e}")
+
+    # ── PostgreSQL ────────────────────────────────────────────────────────────
+    pg = connections.get("postgresql")
+    if pg and pg.connected:
+        try:
+            schemas = pg.get_schemas()
+            parts.append(f"\n### PostgreSQL ({pg.database}@{pg.host})")
+            parts.append(f"Schémas: {[s['schema_name'] for s in schemas]}")
+            for schema_row in schemas[:3]:
+                schema_name = schema_row["schema_name"]
+                try:
+                    tables = pg.get_tables(schema_name)
+                    parts.append(f"\n#### Schéma: {schema_name}")
+                    for tbl in tables[:30]:
+                        tname = tbl["table_name"]
+                        try:
+                            cols = pg.get_columns(schema_name, tname)
+                            col_summary = ", ".join(
+                                f"{c['column_name']} ({c['data_type']})" for c in cols[:30]
+                            )
+                            parts.append(f"  Table `{schema_name}.{tname}` — colonnes: {col_summary}")
+                        except Exception:
+                            parts.append(f"  Table `{schema_name}.{tname}` — colonnes indisponibles")
+                    try:
+                        fks = pg.get_foreign_keys(schema_name)
+                        if fks:
+                            fk_lines = [
+                                f"{r['source_table']}.{r['source_column']} → {r['target_table']}.{r['target_column']}"
+                                for r in fks[:20]
+                            ]
+                            parts.append(f"  Clés étrangères: {'; '.join(fk_lines)}")
+                    except Exception:
+                        pass
+                except Exception:
+                    parts.append(f"  Schéma {schema_name} — tables indisponibles")
+        except Exception as e:
+            parts.append(f"### PostgreSQL — erreur: {e}")
+
+    # ── GCS ───────────────────────────────────────────────────────────────────
+    gcs = connections.get("gcs")
+    if gcs and gcs.connected:
+        try:
+            buckets = gcs.get_buckets()
+            parts.append(f"\n### GCS (project: {gcs.project_id})")
+            parts.append(f"Buckets: {[b['name'] for b in buckets]}")
+            for bucket in buckets[:3]:
+                bname = bucket["name"]
+                try:
+                    blobs = gcs.get_blobs(bname, max_results=50)
+                    file_summary = ", ".join(
+                        f"{b['name']} ({b.get('file_type','?')})" for b in blobs[:20]
+                    )
+                    parts.append(f"  Bucket `{bname}`: {file_summary}")
+                    # Try reading headers of first CSV found
+                    for blob in blobs[:10]:
+                        if blob.get("file_type") == "csv":
+                            try:
+                                header = gcs.read_csv_header(bname, blob["name"])
+                                cols = header.get("columns", [])
+                                parts.append(
+                                    f"    CSV `{blob['name']}` — colonnes: {', '.join(str(c) for c in cols[:30])}"
+                                )
+                            except Exception:
+                                pass
+                            break
+                except Exception:
+                    parts.append(f"  Bucket `{bname}` — contenu indisponible")
+        except Exception as e:
+            parts.append(f"### GCS — erreur: {e}")
+
+    # ── Power BI ──────────────────────────────────────────────────────────────
+    pbi = connections.get("powerbi")
+    if pbi and pbi.connected:
+        try:
+            workspaces = pbi.get_workspaces()
+            parts.append(f"\n### Power BI")
+            for ws in workspaces[:5]:
+                wsid = ws.get("id", "")
+                wsname = ws.get("name", wsid)
+                try:
+                    datasets = pbi.get_datasets(wsid)
+                    reports = pbi.get_reports(wsid)
+                    parts.append(
+                        f"  Workspace `{wsname}`: {len(datasets)} datasets, {len(reports)} reports"
+                    )
+                    for ds in datasets[:5]:
+                        parts.append(f"    Dataset: {ds.get('name','?')}")
+                    for rpt in reports[:5]:
+                        parts.append(f"    Report: {rpt.get('name','?')}")
+                except Exception:
+                    parts.append(f"  Workspace `{wsname}` — détails indisponibles")
+        except Exception as e:
+            parts.append(f"### Power BI — erreur: {e}")
+
+    # ── GitHub ─────────────────────────────────────────────────────────────────
+    gh = connections.get("github")
+    if gh and gh.connected:
+        try:
+            user = gh.client.get_user()
+            parts.append(f"\n### GitHub (user: {user.login})")
+            repos = list(user.get_repos(sort="updated"))[:10]
+            parts.append(f"Repos récents: {[r.name for r in repos]}")
+        except Exception as e:
+            parts.append(f"### GitHub — erreur: {e}")
+
+    if not parts:
+        return "Aucune source de données connectée."
+
+    return "\n".join(parts)
+
+
 @router.post("/projects/{project_id}/pipeline/template")
 async def pipeline_step_template(
     project_id: str,
@@ -715,6 +864,10 @@ async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholder
 
     # Gather source content as a pseudo-metadata dict
     source_content = _get_source_content_for_project(project_id)
+
+    # Build live data source schema context from all connected sources
+    datasource_context = _build_datasource_context()
+
     metadata = {
         "repo_name": p["name"],
         "owner": "",
@@ -725,6 +878,10 @@ async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholder
         "structure": {},
         "sql_files": [],
         "python_files": [],
+        "yaml_files": [],
+        "json_files": [],
+        "notebook_files": [],
+        "datasource_context": datasource_context,
     }
 
     from app.agents.extraction_agent import ExtractionAgent
@@ -862,12 +1019,18 @@ async def project_chat(project_id: str, req: ProjectChatRequest):
         source_lines.append(f"- {src.get('label', '')} ({src.get('type', '')}) config={json.dumps(cfg)[:200]}")
     sources_text = "\n".join(source_lines) if source_lines else "No sources connected."
 
+    # Build live data source context (real schemas, tables, files from connected sources)
+    live_datasource_context = _build_datasource_context()
+
     # Build system prompt with full pipeline context
     system_parts = [
-        "You are a helpful assistant for a spec-generation platform.",
+        "You are a helpful data engineering assistant for a spec-generation platform called Jems Spec Generator.",
+        "You have access to the real schemas, tables, and content of the connected data sources listed below.",
+        "Use this information to answer questions precisely — reference actual table names, column names, and data structures when relevant.",
         f"Current project: {p['name']}",
         f"Project description: {p.get('description', 'N/A')}",
-        f"Connected sources:\n{sources_text}",
+        f"Connected sources (project config):\n{sources_text}",
+        f"Live data source context (real schemas and content):\n{live_datasource_context}",
         f"Current pipeline step: {req.pipeline_step or state.get('step', 'none')}",
     ]
     if req.placeholders:

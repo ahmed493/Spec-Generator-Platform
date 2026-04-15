@@ -2,16 +2,19 @@
 ExtractionAgent
 - Takes repo metadata and a list of LLM-detected fields from any template
 - Uses the LLM to extract/infer the best value for each field
+- Reads ALL repo files (SQL, Python, YAML, JSON, notebooks) with high char limits
+- Enriches context with live schema/content from connected data sources (BQ, PG, GCS)
 - Returns a dict {field_id: extracted_value}
 """
 import json
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 from app.agents.llm_client import get_llm_client, BaseLLMClient
 
 
 EXTRACTION_SYSTEM_PROMPT = """Tu es un expert en analyse de code et data engineering.
-Tu analyses des métadonnées de repositories (README, structure, fichiers SQL/Python, etc.)
-et tu extrais des informations précises pour remplir les champs d'une spécification.
+Tu analyses le contenu complet de repositories (code source, SQL, Python, YAML, notebooks, README)
+et les schémas réels de sources de données connectées (BigQuery, PostgreSQL, GCS, Power BI).
+Tu extrais des informations précises et détaillées pour remplir les champs d'une spécification.
 Réponds toujours en JSON valide uniquement, sans texte supplémentaire."""
 
 
@@ -85,24 +88,52 @@ class ExtractionAgent:
         parts.append(f"Topics: {metadata.get('topics', 'N/A')}")
 
         if metadata.get("readme"):
-            parts.append(f"\n## README (extrait):\n{metadata['readme'][:3000]}")
+            # Full README up to 6000 chars
+            parts.append(f"\n## README (complet):\n{metadata['readme'][:6000]}")
 
         if metadata.get("structure"):
             files = metadata["structure"].get("files", [])
-            file_list = [f["path"] for f in files[:40]]
-            parts.append(f"\n## Structure des fichiers:\n{json.dumps(file_list, ensure_ascii=False)}")
+            file_list = [f["path"] for f in files]  # all files, no limit
+            parts.append(f"\n## Structure complète des fichiers ({len(file_list)} fichiers):\n{json.dumps(file_list, ensure_ascii=False)}")
 
+        # SQL files — all of them, up to 4000 chars each
         if metadata.get("sql_files"):
-            parts.append(f"\n## Fichiers SQL ({len(metadata['sql_files'])}):")
-            for sql in metadata["sql_files"][:5]:
-                content = sql.get("content", "")[:1500]
+            parts.append(f"\n## Fichiers SQL ({len(metadata['sql_files'])} au total — contenu complet):")
+            for sql in metadata["sql_files"]:
+                content = sql.get("content", "")[:4000]
                 parts.append(f"### {sql['path']}:\n```sql\n{content}\n```")
 
+        # Python files — all of them, up to 4000 chars each
         if metadata.get("python_files"):
-            parts.append(f"\n## Fichiers Python ({len(metadata['python_files'])}):")
-            for py in metadata["python_files"][:5]:
-                content = py.get("content", "")[:1500]
+            parts.append(f"\n## Fichiers Python ({len(metadata['python_files'])} au total — contenu complet):")
+            for py in metadata["python_files"]:
+                content = py.get("content", "")[:4000]
                 parts.append(f"### {py['path']}:\n```python\n{content}\n```")
+
+        # YAML / config files
+        if metadata.get("yaml_files"):
+            parts.append(f"\n## Fichiers YAML/Config ({len(metadata['yaml_files'])}):")
+            for yf in metadata["yaml_files"]:
+                content = yf.get("content", "")[:2000]
+                parts.append(f"### {yf['path']}:\n```yaml\n{content}\n```")
+
+        # JSON files (non-credentials)
+        if metadata.get("json_files"):
+            parts.append(f"\n## Fichiers JSON ({len(metadata['json_files'])}):")
+            for jf in metadata["json_files"]:
+                content = jf.get("content", "")[:2000]
+                parts.append(f"### {jf['path']}:\n```json\n{content}\n```")
+
+        # Notebooks
+        if metadata.get("notebook_files"):
+            parts.append(f"\n## Notebooks ({len(metadata['notebook_files'])}):")
+            for nb in metadata["notebook_files"]:
+                content = nb.get("content", "")[:3000]
+                parts.append(f"### {nb['path']}:\n{content}")
+
+        # Live data source context injected by the orchestrator
+        if metadata.get("datasource_context"):
+            parts.append(f"\n## Schémas et contenu des sources de données connectées:\n{metadata['datasource_context']}")
 
         return "\n".join(parts)
 

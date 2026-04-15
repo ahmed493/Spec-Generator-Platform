@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=1440"/>
+  <title>Architecture — AI-Powered Spec Generator Platform</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, system-ui, sans-serif;
+      background: #f4f6fb;
+      min-width: 1320px;
+    }
+
+    /* ── PAGE HEADER ─────────────────────────────── */
+    .page-header {
+      text-align: center;
+      padding: 30px 48px 24px;
+      background: white;
+      border-bottom: 1px solid #eaecf2;
+    }
+    .page-header h1 {
+      font-size: 21px;
+      font-weight: 700;
+      color: #1a1a2e;
+      letter-spacing: -0.3px;
+      margin-bottom: 4px;
+    }
+    .page-header p { font-size: 12px; color: #999; letter-spacing: 0.2px; }
+
+    /* ── DIAGRAM WRAP ────────────────────────────── */
+    .arch-wrap { padding: 28px 36px 0; overflow-x: auto; }
+
+    .arch-diagram {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      min-width: 1220px;
+    }
+
+    /* ── COLUMN ──────────────────────────────────── */
+    .col {
+      flex: 1;
+      min-width: 182px;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 14px rgba(0,0,0,0.07);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── COLUMN HEADER ───────────────────────────── */
+    .col-hdr {
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+    .col-hdr-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.95);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      line-height: 1.2;
+    }
+    .hdr-icon { flex-shrink: 0; opacity: 0.9; }
+
+    /* gradient per column — warm left-to-right JEMS flow */
+    .hdr-1 { background: linear-gradient(135deg, #FFAA40, #FF8040); }
+    .hdr-2 { background: linear-gradient(135deg, #FF8040, #FF6050); }
+    .hdr-3 { background: linear-gradient(135deg, #FF6050, #E8607A); }
+    .hdr-4 { background: linear-gradient(135deg, #E8607A, #D45570); }
+    .hdr-5 { background: linear-gradient(135deg, #D45570, #C94E64); }
+    .hdr-6 { background: linear-gradient(135deg, #C94E64, #B8406E); }
+
+    /* ── COLUMN BODY ─────────────────────────────── */
+    .col-body { padding: 11px 9px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+
+    /* ── SOURCE ITEM ─────────────────────────────── */
+    .src-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 7px 9px;
+      border-radius: 7px;
+      border: 1px solid rgba(0,0,0,0.06);
+      background: #fafbfc;
+    }
+    .src-ico {
+      width: 26px; height: 26px; border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; margin-top: 1px;
+    }
+    .src-txt h4 { font-size: 11.5px; font-weight: 600; color: #1a1a2e; line-height: 1.2; margin-bottom: 1px; }
+    .src-txt p  { font-size: 9.5px; color: #999; line-height: 1.4; }
+
+    /* ── CHIP ────────────────────────────────────── */
+    .chip {
+      display: flex; align-items: flex-start; gap: 7px;
+      padding: 6px 8px;
+      background: #f8f9fc;
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 6px;
+    }
+    .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .chip-lbl { font-size: 10.5px; color: #444; line-height: 1.4; }
+    .chip-sub { font-size: 9px; color: #aaa; }
+
+    /* ── SUB-BOX ─────────────────────────────────── */
+    .sub-box { border-radius: 8px; overflow: hidden; border: 1px solid rgba(0,0,0,0.07); }
+    .sub-hdr {
+      padding: 5px 9px;
+      font-size: 9.5px; font-weight: 700; color: white; letter-spacing: 0.3px;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .sub-body { padding: 5px 7px; display: flex; flex-direction: column; gap: 3px; background: white; }
+    .sub-chip {
+      display: flex; align-items: center; gap: 5px;
+      padding: 3px 6px;
+      background: #f5f7fb;
+      border-radius: 4px; font-size: 9.5px; color: #444;
+      border: 1px solid rgba(0,0,0,0.04);
+    }
+    .sub-ico {
+      width: 14px; height: 14px; border-radius: 3px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 7.5px; color: white; font-weight: 700; flex-shrink: 0;
+    }
+
+    /* ── SECTION LABEL ───────────────────────────── */
+    .sect-lbl {
+      font-size: 8.5px; font-weight: 700; letter-spacing: 0.8px;
+      text-transform: uppercase; color: #c0c5d0;
+      padding: 3px 2px 1px;
+      border-top: 1px solid #f0f2f6; margin-top: 2px;
+    }
+
+    /* ── SOON BADGE ──────────────────────────────── */
+    .soon {
+      font-size: 8px; font-weight: 600;
+      color: #aaa; background: rgba(0,0,0,0.04);
+      border: 1px solid #e0e0e0;
+      border-radius: 3px; padding: 1px 4px; margin-left: auto; white-space: nowrap;
+    }
+
+    /* ── ARROW BETWEEN COLUMNS ───────────────────── */
+    .col-arrow {
+      width: 26px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ── API CALLOUT ─────────────────────────────── */
+    .api-callout {
+      border: 1.5px dashed #ddd; border-radius: 6px;
+      padding: 7px 8px; margin-top: 2px;
+    }
+    .api-callout .api-label {
+      font-size: 8.5px; font-weight: 700; letter-spacing: 0.5px;
+      color: #bbb; text-transform: uppercase; margin-bottom: 3px;
+    }
+    .api-callout p { font-size: 9.5px; color: #aaa; line-height: 1.55; }
+
+    /* ── SECURITY BAR ────────────────────────────── */
+    .security-bar {
+      margin: 20px 36px 0;
+      background: linear-gradient(135deg, #1a1a2e 0%, #2b1d50 50%, #1a1a2e 100%);
+      border-radius: 10px;
+      padding: 13px 28px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sec-title {
+      font-size: 12px; font-weight: 700; color: white;
+      letter-spacing: 1.4px; text-transform: uppercase;
+    }
+    .sec-items { font-size: 11.5px; color: rgba(255,255,255,0.55); margin-left: 10px; }
+    .sec-dot   { color: rgba(255,255,255,0.25); margin: 0 8px; }
+
+    /* ── LEGEND ──────────────────────────────────── */
+    .legend {
+      padding: 16px 36px 32px;
+      display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+    }
+    .lg-item { display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: #666; }
+    .lg-ico  {
+      width: 20px; height: 18px; border-radius: 4px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 8px; font-weight: 800; color: white;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════ PAGE HEADER ═══════ -->
+  <div class="page-header">
+    <h1>AI-Powered Spec Generator Platform — Architecture</h1>
+    <p>Automated Metadata Extraction &nbsp;·&nbsp; Data Contracts Generation &nbsp;·&nbsp; Governance</p>
+  </div>
+
+  <!-- ═══════ MAIN DIAGRAM ═══════ -->
+  <div class="arch-wrap">
+    <div class="arch-diagram">
+
+      <!-- ══ COL 1 — DATA SOURCES ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-1">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.6"><circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5" stroke-linecap="round"/></svg>
+          <span class="col-hdr-label">Data Sources</span>
+        </div>
+        <div class="col-body">
+
+          <div class="src-item">
+            <div class="src-ico" style="background:linear-gradient(135deg,#24292e,#444)">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="white"><path d="M8 .5a7.5 7.5 0 00-2.37 14.62c.37.07.5-.16.5-.36v-1.3c-2.09.46-2.53-1.01-2.53-1.01-.34-.87-.83-1.1-.83-1.1-.68-.46.05-.45.05-.45.75.05 1.15.77 1.15.77.67 1.14 1.75.81 2.18.62.07-.48.26-.81.47-1-1.67-.19-3.42-.83-3.42-3.7 0-.82.29-1.49.77-2.01-.08-.19-.33-.96.07-2 0 0 .63-.2 2.07.77A7.19 7.19 0 018 4.84a7.19 7.19 0 011.89.25c1.44-.97 2.07-.77 2.07-.77.4 1.04.15 1.81.07 2 .48.52.77 1.19.77 2.01 0 2.88-1.76 3.51-3.43 3.7.27.23.5.69.5 1.39v2.06c0 .2.13.44.51.36A7.5 7.5 0 008 .5z"/></svg>
+            </div>
+            <div class="src-txt"><h4>GitHub</h4><p>Repositories<br/>Workflows</p></div>
+          </div>
+
+          <div class="src-item">
+            <div class="src-ico" style="background:linear-gradient(135deg,#F2C811,#E0A800)">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="white"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5.5" width="3" height="8.5" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>
+            </div>
+            <div class="src-txt"><h4>Power BI</h4><p>Datasets<br/>Reports</p></div>
+          </div>
+
+          <div class="src-item">
+            <div class="src-ico" style="background:linear-gradient(135deg,#336791,#2c5a7c)">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.2"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v4c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2V4"/><path d="M2.5 8v4c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2V8"/></svg>
+            </div>
+            <div class="src-txt"><h4>PostgreSQL</h4><p>Tables<br/>Schemas</p></div>
+          </div>
+
+          <div class="src-item">
+            <div class="src-ico" style="background:linear-gradient(135deg,#4285F4,#34A853)">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M3 10a5.5 5.5 0 1 1 5.5 5.5" stroke="white" stroke-width="1.3" stroke-linecap="round"/><circle cx="8.5" cy="7.5" r="2.5" fill="white"/></svg>
+            </div>
+            <div class="src-txt"><h4>BigQuery / GCS</h4><p>Datasets, Buckets<br/>&amp; Other Sources</p></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ↠ -->
+      <div class="col-arrow">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8607a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <!-- ══ COL 2 — DATA ACQUISITION ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-2">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.6"><path d="M8 2L14 5v6L8 14 2 11V5L8 2z"/><circle cx="8" cy="8" r="2" fill="white"/></svg>
+          <span class="col-hdr-label">Data Acquisition</span>
+        </div>
+        <div class="col-body">
+
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#FF8040,#FF6050)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="6" x2="10" y2="6"/><line x1="6" y1="2" x2="6" y2="10"/></svg>
+              MCP Connectors
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#555">G</div>github_server.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#4285F4">B</div>bigquery_server.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#336791">P</div>postgresql_server.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#34A853">G</div>gcs_server.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#c8a200;color:#333">P</div>powerbi_server.py</div>
+            </div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#FF8040"></div>
+            <div class="chip-lbl">API Gateway <span class="chip-sub">(FastAPI · Port 8000)</span></div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#FF8040"></div>
+            <div class="chip-lbl">Authentication<br/><span class="chip-sub">SSO · OAuth · Tokens</span></div>
+          </div>
+
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#5a4a8a,#3d3478)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><rect x="1" y="1" width="10" height="10" rx="2"/><path d="M3 5h6M3 7h4"/></svg>
+              LLM Clients
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#5a4a8a">B</div>base_llm_client.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#7c6aad">L</div>llm_client.py</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#ff7046">H</div>huggingface_client.py</div>
+            </div>
+          </div>
+
+          <div class="chip" style="background:#fff8f5;border-color:rgba(255,128,64,0.12)">
+            <div class="chip-dot" style="background:#ccc"></div>
+            <div class="chip-lbl"><span class="chip-sub">MCP Protocol — Context Exchange Layer</span></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ↠ -->
+      <div class="col-arrow">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8607a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <!-- ══ COL 3 — DATA INTEGRATION ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-3">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.6"><circle cx="4" cy="8" r="2.5"/><circle cx="12" cy="8" r="2.5"/><line x1="6.5" y1="8" x2="9.5" y2="8" stroke-linecap="round"/></svg>
+          <span class="col-hdr-label">Data Integration</span>
+        </div>
+        <div class="col-body">
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#FF6050"></div>
+            <div class="chip-lbl">MCP Connectors <span class="chip-sub">(per source)</span></div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#FF6050"></div>
+            <div class="chip-lbl">API Gateway <span class="chip-sub">(FastAPI)</span></div>
+          </div>
+
+          <!-- AI Orchestration Layer -->
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#e8607a,#c94e64)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><polygon points="6,1 11,3.5 11,8.5 6,11 1,8.5 1,3.5"/><circle cx="6" cy="6" r="1.5" fill="white"/></svg>
+              AI Orchestration Layer
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip" style="background:#fef0f3;border-color:rgba(232,96,122,0.15)">
+                <div class="sub-ico" style="background:#e8607a">O</div>
+                <span style="font-weight:600;color:#c94e64">OrchestratorAgent</span>
+              </div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#e8607a">S</div>Spec Agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#d45570">M</div>Mapping Agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#c94e64">V</div>Validation Agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#FF8040">T</div>Template Agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#FF6050">E</div>Extraction Agent</div>
+            </div>
+          </div>
+
+          <!-- MCP Protocol -->
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#FF7040,#FF5555)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><rect x="1" y="3" width="10" height="6" rx="1.5"/><line x1="4" y1="6" x2="8" y2="6"/></svg>
+              MCP Protocol
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#5a4a8a">B</div>base_llm_client</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#ff7046">H</div>huggingface_client</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#7c6aad">L</div>llm_client</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ↠ -->
+      <div class="col-arrow">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8607a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <!-- ══ COL 4 — DATA REPOSITORY ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-4">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.5"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v8c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2V4"/><path d="M2.5 8c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2"/></svg>
+          <span class="col-hdr-label">Data Repository</span>
+        </div>
+        <div class="col-body">
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#E8607A"></div>
+            <div class="chip-lbl">Database / Storage<br/><span class="chip-sub">GCS · Document Store · Buckets</span></div>
+          </div>
+
+          <div class="sect-lbl">Agent Modules</div>
+
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#e8607a,#c94e64)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><circle cx="6" cy="6" r="4"/><path d="M4 6l1.5 1.5L8.5 4.5" stroke="white" stroke-linecap="round"/></svg>
+              app/agents/
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#5a4a8a">B</div>base_llm_agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#FF6050">E</div>extraction_agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#d45570">M</div>mapping_agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#e8607a">S</div>spec_agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#FF8040">T</div>template_agent</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#c94e64">V</div>validation_agent</div>
+            </div>
+          </div>
+
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#1a1a2e,#2d1f4e)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.1"><rect x="1" y="1" width="10" height="10" rx="2"/><path d="M3 4h6M3 6h6M3 8h3"/></svg>
+              LLM Engine (GPT-4o-mini)
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#4a3a7a">V</div>Versioning</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#1d6040">E</div>Encrypted Creds</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#1a5580">H</div>Activity History</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ↠ -->
+      <div class="col-arrow">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8607a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <!-- ══ COL 5 — ANALYTICS & PROCESSING ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-5">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.6" stroke-linecap="round"><polyline points="2,12 5,7 8,9 11,4 14,4"/><polyline points="11,4 14,4 14,7"/></svg>
+          <span class="col-hdr-label">Analytics &amp; Processing</span>
+        </div>
+        <div class="col-body">
+
+          <!-- Diagram Generation — coming soon -->
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#bbb,#aaa)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><rect x="0.5" y="2.5" width="4" height="3" rx="1"/><rect x="7.5" y="6.5" width="4" height="3" rx="1"/><path d="M4.5 4h1.5v2.5H6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              Diagram Generation
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip">
+                <div class="sub-ico" style="background:#bbb">M</div>Mermaid
+                <span class="soon">Soon</span>
+              </div>
+              <div class="sub-chip">
+                <div class="sub-ico" style="background:#bbb">D</div>Draw.io
+                <span class="soon">Soon</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#D45570"></div>
+            <div class="chip-lbl">Monitoring &amp; Logs<br/><span class="chip-sub">structlog</span></div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#D45570"></div>
+            <div class="chip-lbl">CI/CD &amp; Audit Trail</div>
+          </div>
+
+          <div class="sub-box">
+            <div class="sub-hdr" style="background:linear-gradient(135deg,#D45570,#C94E64)">
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><path d="M2 1h5l3 3v7H2z"/><path d="M7 1v3h3"/></svg>
+              File Storage
+            </div>
+            <div class="sub-body">
+              <div class="sub-chip"><div class="sub-ico" style="background:#c94e64">J</div>JSON &amp; PDF specs</div>
+              <div class="sub-chip"><div class="sub-ico" style="background:#d45570">D</div>Diagrams &amp; exports</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ↠ -->
+      <div class="col-arrow">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e8607a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="20" y2="12"/><polyline points="13 5 20 12 13 19"/></svg>
+      </div>
+
+      <!-- ══ COL 6 — PRESENTATION LAYER ══ -->
+      <div class="col">
+        <div class="col-hdr hdr-6">
+          <svg class="hdr-icon" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.6"><rect x="2" y="3" width="12" height="8" rx="1.5"/><path d="M6 14h4M8 11v3" stroke-linecap="round"/></svg>
+          <span class="col-hdr-label">Presentation Layer</span>
+        </div>
+        <div class="col-body">
+
+          <div class="chip" style="background:#fff4f6;border-color:rgba(201,78,100,0.15)">
+            <div class="chip-dot" style="background:#C94E64"></div>
+            <div class="chip-lbl" style="font-weight:600;color:#c94e64">React + Vite Frontend<br/><span class="chip-sub" style="color:#e8607a">Port 3001</span></div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#c94e64"></div>
+            <div class="chip-lbl">Dashboard &amp; Navigation</div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#c94e64"></div>
+            <div class="chip-lbl">Data Source Connection</div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#c94e64"></div>
+            <div class="chip-lbl">Pipeline View<br/><span class="chip-sub">4-step with validation gates</span></div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#c94e64"></div>
+            <div class="chip-lbl">Spec Visualization &amp; Export</div>
+          </div>
+
+          <div class="chip">
+            <div class="chip-dot" style="background:#c94e64"></div>
+            <div class="chip-lbl">Chatbot Interface<br/><span class="chip-sub">GPT-4o-mini · context-aware</span></div>
+          </div>
+
+          <div class="api-callout">
+            <div class="api-label">API Calls</div>
+            <p>↔ Backend (port 8000)<br/>↔ Validation / Query</p>
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /arch-diagram -->
+  </div><!-- /arch-wrap -->
+
+  <!-- ═══════ SECURITY BAR ═══════ -->
+  <div class="security-bar">
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.5" style="flex-shrink:0"><path d="M8 2L2 5v4c0 3.1 2.5 5.9 6 6.9 3.5-1 6-3.8 6-6.9V5L8 2z"/></svg>
+    <span class="sec-title">Security &amp; Compliance</span>
+    <span class="sec-items">
+      SSO<span class="sec-dot">·</span>Role-Based Access Control<span class="sec-dot">·</span>Encryption<span class="sec-dot">·</span>Audit Logs<span class="sec-dot">·</span>Token Management
+    </span>
+  </div>
+
+  <!-- ═══════ LEGEND ═══════ -->
+  <div class="legend">
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#24292e,#444)">
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="white"><path d="M8 .5a7.5 7.5 0 00-2.37 14.62c.37.07.5-.16.5-.36v-1.3c-2.09.46-2.53-1.01-2.53-1.01-.34-.87-.83-1.1-.83-1.1-.68-.46.05-.45.05-.45.75.05 1.15.77 1.15.77.67 1.14 1.75.81 2.18.62.07-.48.26-.81.47-1-1.67-.19-3.42-.83-3.42-3.7 0-.82.29-1.49.77-2.01-.08-.19-.33-.96.07-2 0 0 .63-.2 2.07.77A7.19 7.19 0 018 4.84a7.19 7.19 0 011.89.25c1.44-.97 2.07-.77 2.07-.77.4 1.04.15 1.81.07 2 .48.52.77 1.19.77 2.01 0 2.88-1.76 3.51-3.43 3.7.27.23.5.69.5 1.39v2.06c0 .2.13.44.51.36A7.5 7.5 0 008 .5z"/></svg>
+      </div>GitHub
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#F2C811,#E0A800)">
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="white"><rect x="2" y="9" width="3" height="5" rx="1"/><rect x="6.5" y="5.5" width="3" height="8.5" rx="1"/><rect x="11" y="2" width="3" height="12" rx="1"/></svg>
+      </div>Power BI
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#336791,#2c5a7c)">
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="white" stroke-width="1.1"><ellipse cx="8" cy="4" rx="5.5" ry="2"/><path d="M2.5 4v8c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2V4"/><path d="M2.5 8c0 1.1 2.46 2 5.5 2s5.5-.9 5.5-2"/></svg>
+      </div>PostgreSQL
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#4285F4,#34A853);font-size:7px;font-weight:700">BQ</div>
+      BigQuery / GCS
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#FF8040,#FF6050)">
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="6" x2="10" y2="6"/><line x1="6" y1="2" x2="6" y2="10"/></svg>
+      </div>MCP Connector
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#e8607a,#c94e64)">
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.2"><polygon points="6,1 11,3.5 11,8.5 6,11 1,8.5 1,3.5"/><circle cx="6" cy="6" r="1.5" fill="white"/></svg>
+      </div>AI Agent
+    </div>
+
+    <div class="lg-item">
+      <div class="lg-ico" style="background:linear-gradient(135deg,#2d1f4e,#1a1a2e)">
+        <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="white" stroke-width="1.1"><ellipse cx="6" cy="3" rx="4" ry="1.5"/><path d="M2 3v6c0 .83 1.79 1.5 4 1.5S10 9.83 10 9V3"/></svg>
+      </div>Database
+    </div>
+
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+      <svg width="28" height="28" viewBox="0 0 56 56" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="lg3" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#FFAA40"/><stop offset="45%" stop-color="#FF7055"/><stop offset="100%" stop-color="#FF3D82"/>
+          </linearGradient>
+        </defs>
+        <circle cx="28" cy="28" r="28" fill="url(#lg3)"/>
+        <rect x="11.5" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+        <rect x="23.25" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+        <rect x="35" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+      </svg>
+      <span style="font-size:10.5px;color:#aaa;">JEMS 2026</span>
+    </div>
+
+  </div><!-- /legend -->
+
+</body>
+</html>

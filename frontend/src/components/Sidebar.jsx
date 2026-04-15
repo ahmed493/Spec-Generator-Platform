@@ -1,6 +1,7 @@
 import { FolderKanban, Link2, ArrowLeft } from 'lucide-react'
 import { useProject } from '../context/ProjectContext'
 import ThemeToggle from './ThemeToggle'
+import logoSvg from '../assets/logo.svg'
 
 const NAV_ITEMS = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
@@ -14,12 +15,12 @@ export default function Sidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
-        <div className="jems-logo-wrap">
-          <span className="jems-logo">Jems</span>
+        <div className="brand-logo-wrap">
+          <img src={logoSvg} alt="Logo" className="brand-logo-img" />
         </div>
         <div className="brand-text">
           <h1>Spec Generator</h1>
-          <span className="brand-tag">by JEMS</span>
+          <span className="brand-tag">AI-Powered</span>
         </div>
       </div>
 

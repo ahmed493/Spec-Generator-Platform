@@ -147,6 +147,209 @@
 /* Scrollbar tracks lighter */
 [data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.12) !important; }
 
+/* ── Modal in light mode ── */
+[data-theme="light"] .modal-overlay {
+  background: rgba(15, 22, 36, 0.35);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+[data-theme="light"] .modal {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+[data-theme="light"] .modal-actions {
+  border-top-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .modal-close:hover {
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+}
+
+/* ── Inputs in light mode ── */
+[data-theme="light"] input[type="text"],
+[data-theme="light"] input[type="password"],
+[data-theme="light"] input[type="number"],
+[data-theme="light"] input[type="file"] {
+  background-color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: var(--text-primary);
+}
+[data-theme="light"] input[type="text"]:focus,
+[data-theme="light"] input[type="password"]:focus,
+[data-theme="light"] input[type="number"]:focus {
+  background-color: #ffffff;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(201, 78, 100, 0.1);
+}
+[data-theme="light"] input[type="text"]::placeholder,
+[data-theme="light"] input[type="password"]::placeholder {
+  color: #aab0bc;
+}
+
+/* ── Select in light mode ── */
+[data-theme="light"] select {
+  background-color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.14);
+  color: var(--text-primary);
+}
+[data-theme="light"] select option {
+  background-color: #ffffff;
+  color: #1a202c;
+}
+
+/* ── Textarea in light mode ── */
+[data-theme="light"] textarea {
+  background: #f8f9fc !important;
+  border-color: rgba(0, 0, 0, 0.1) !important;
+  color: var(--text-primary) !important;
+}
+[data-theme="light"] textarea:focus {
+  border-color: var(--accent) !important;
+  box-shadow: 0 0 0 3px rgba(201, 78, 100, 0.08);
+}
+
+/* ── Code blocks in light mode ── */
+[data-theme="light"] .code-block {
+  background: #f0f2f6;
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #374151;
+}
+
+/* ── Buttons in light mode ── */
+[data-theme="light"] .btn-primary {
+  background: rgba(201, 78, 100, 0.09);
+  color: var(--accent);
+  border-color: rgba(201, 78, 100, 0.22);
+}
+[data-theme="light"] .btn-primary:hover {
+  background: rgba(201, 78, 100, 0.15);
+  border-color: rgba(201, 78, 100, 0.38);
+  box-shadow: 0 2px 12px rgba(201, 78, 100, 0.12);
+}
+[data-theme="light"] .btn-primary:active {
+  background: rgba(201, 78, 100, 0.2);
+}
+[data-theme="light"] .btn-secondary {
+  background: #f4f5f7;
+  color: var(--text-primary);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+[data-theme="light"] .btn-secondary:hover {
+  background: #e9ebee;
+  border-color: rgba(0, 0, 0, 0.18);
+}
+[data-theme="light"] .btn-secondary:active {
+  background: #dfe1e5;
+}
+[data-theme="light"] .btn-success {
+  background: rgba(22, 163, 104, 0.1);
+  color: var(--success);
+  border-color: rgba(22, 163, 104, 0.2);
+}
+[data-theme="light"] .btn-danger-outline {
+  color: var(--danger);
+  border-color: rgba(220, 74, 74, 0.25);
+}
+[data-theme="light"] .btn-danger-outline:hover {
+  background: rgba(220, 74, 74, 0.07);
+  border-color: rgba(220, 74, 74, 0.38);
+}
+
+/* ── Spec output in light mode ── */
+[data-theme="light"] .spec-output {
+  background: #f8f9fc;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Stats card in light mode ── */
+[data-theme="light"] .stat-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* ── Connection cards in light mode ── */
+[data-theme="light"] .connection-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .connection-card:hover {
+  border-color: rgba(0, 0, 0, 0.15);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .connection-card h3 {
+  color: #0f1624;
+}
+[data-theme="light"] .connection-card .card-icon {
+  box-shadow: 0 2px 10px rgba(232, 96, 122, 0.25);
+}
+[data-theme="light"] .card-connected {
+  border-color: rgba(22, 163, 104, 0.2) !important;
+  box-shadow: 0 1px 4px rgba(22, 163, 104, 0.06);
+}
+[data-theme="light"] .card-icon.icon-active {
+  background: rgba(22, 163, 104, 0.08);
+  color: var(--success);
+  border-color: rgba(22, 163, 104, 0.18);
+}
+
+/* ── Nav sidebar buttons in light mode ── */
+[data-theme="light"] .sidebar nav button {
+  color: #5a6578;
+}
+[data-theme="light"] .sidebar nav button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: #1a202c;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .sidebar nav button.active {
+  background-color: rgba(201, 78, 100, 0.08);
+  color: var(--accent);
+  border-color: rgba(201, 78, 100, 0.15);
+}
+[data-theme="light"] .sidebar nav button:active {
+  background-color: rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── Project cards in light mode ── */
+[data-theme="light"] .project-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+[data-theme="light"] .project-card:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .repo-card {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .repo-card:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .file-tree {
+  background: #ffffff;
+  border-color: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .lang-tag {
+  background: #f0f2f5;
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #5a6578;
+}
+
+/* ── Message banners in light mode ── */
+[data-theme="light"] .message.success {
+  background: rgba(22, 163, 104, 0.07);
+  border-color: rgba(22, 163, 104, 0.18);
+}
+[data-theme="light"] .message.error {
+  background: rgba(220, 74, 74, 0.07);
+  border-color: rgba(220, 74, 74, 0.18);
+}
+
 /* ========== RESET & BASE ========== */
 *,
 *::before,
@@ -254,21 +457,20 @@ body::after {
   flex-shrink: 0;
 }
 
-/* JEMS gradient logo text */
-.jems-logo-wrap {
+/* Logo image */
+.brand-logo-wrap {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.jems-logo {
-  font-family: 'Syne', sans-serif;
-  font-size: 22px;
-  font-weight: 800;
-  background: var(--jems-gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  letter-spacing: -0.5px;
-  line-height: 1;
+.brand-logo-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
 }
 
 .sidebar-brand .brand-icon {
@@ -520,6 +722,9 @@ body::after {
   transition: all var(--transition);
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
 
 /* Subtle inner glow on hover */
@@ -562,14 +767,15 @@ body::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-  border: 1px solid var(--border);
+  background: linear-gradient(135deg, #e8607a, #d45570);
+  color: #ffffff;
+  border: 1px solid transparent;
   transition: all var(--transition);
+  box-shadow: 0 2px 8px rgba(232, 96, 122, 0.3);
 }
 
 .connection-card:hover .card-icon {
-  border-color: var(--border-hover);
+  box-shadow: 0 4px 14px rgba(232, 96, 122, 0.45);
 }
 
 .connection-card h3 {
@@ -582,8 +788,9 @@ body::after {
 .connection-card .card-desc {
   color: var(--text-secondary);
   font-size: 13px;
-  margin-bottom: 18px;
+  margin-bottom: 16px;
   line-height: 1.6;
+  flex: 1;
 }
 
 .connection-card .card-status {
@@ -664,12 +871,45 @@ body::after {
   box-shadow: 0 0 20px rgba(232, 96, 122, 0.1);
 }
 
+.btn-primary:active {
+  background: linear-gradient(135deg, rgba(232, 96, 122,0.28), rgba(232, 96, 122,0.18));
+}
+
 .btn-primary:disabled {
   background: var(--bg-surface);
   color: var(--text-tertiary);
   border-color: var(--border);
   cursor: not-allowed;
   box-shadow: none;
+}
+
+/* Solid filled accent button (e.g. Connect) */
+.btn-filled {
+  background: linear-gradient(135deg, #e8607a, #d45570);
+  color: #ffffff;
+  border: 1px solid transparent;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+}
+
+.btn-filled:hover {
+  background: linear-gradient(135deg, #d45570, #c94e64);
+  box-shadow: 0 4px 18px rgba(232, 96, 122, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-filled:active {
+  transform: translateY(0);
+  box-shadow: none;
+}
+
+.btn-filled:disabled {
+  background: var(--bg-surface);
+  color: var(--text-tertiary);
+  border-color: var(--border);
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 .btn-secondary {
@@ -863,16 +1103,17 @@ select:focus {
 }
 
 select option {
-  background-color: #0a1628;
+  background-color: var(--bg-deep);
   color: var(--text-primary);
 }
 
 /* ========== INPUTS ========== */
 input[type="text"],
-input[type="password"] {
+input[type="password"],
+input[type="number"] {
   width: 100%;
   padding: 9px 14px;
-  background-color: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   color: var(--text-primary);
@@ -883,11 +1124,12 @@ input[type="password"] {
 }
 
 input[type="text"]:focus,
-input[type="password"]:focus {
+input[type="password"]:focus,
+input[type="number"]:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-glow);
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.06);
 }
 
 input[type="text"]::placeholder,
@@ -1000,6 +1242,7 @@ input[type="checkbox"] {
     0 24px 80px rgba(0, 0, 0, 0.5),
     0 0 1px rgba(255, 255, 255, 0.1);
   animation: modalSlideUp 0.3s var(--ease-out);
+  /* Light mode override declared in light-mode section */
 }
 
 @keyframes modalSlideUp {
@@ -1141,15 +1384,16 @@ input[type="checkbox"] {
 
 /* ========== TEXTAREA (spec output) ========== */
 textarea {
-  background: rgba(0, 0, 0, 0.2) !important;
+  background: rgba(0, 0, 0, 0.18) !important;
   border: 1px solid var(--border) !important;
   color: var(--text-primary) !important;
   font-family: "Cascadia Code", "Fira Code", monospace !important;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 textarea:focus {
   outline: none;
-  border-color: var(--border-hover) !important;
+  border-color: var(--accent) !important;
   box-shadow: 0 0 0 2px var(--accent-glow);
 }
 

@@ -12,23 +12,25 @@ from app.agents.llm_client import get_llm_client, BaseLLMClient
 DETECT_FIELDS_SYSTEM_PROMPT = """Tu es un expert en analyse de documents et spécifications techniques.
 Tu analyses des templates de spécification et tu identifies TOUS les champs, sections et tableaux
 qui doivent être remplis avec des informations spécifiques à un projet.
-Réponds UNIQUEMENT en JSON valide."""
+Réponds UNIQUEMENT en JSON valide. N'omets AUCUN champ, même s'il semble mineur."""
 
 DETECT_FIELDS_PROMPT = """Analyse le template de spécification suivant et identifie TOUS les champs/sections qui doivent être remplis.
 
-## Contenu du template:
+## Contenu du template (partie {chunk_index}/{chunk_total}):
 {template_text}
 
 ## Instructions:
-Identifie chaque champ ou section qui attend une valeur à renseigner. Cela inclut:
-- Les champs marqués "à renseigner"
+Identifie CHAQUE champ ou section qui attend une valeur à renseigner. Cela inclut:
+- Les champs marqués "à renseigner", "[...]", "XX", "N/A à compléter"
 - Les sections entre crochets [...] qui contiennent des instructions
-- Les cellules de tableau vides à remplir
+- Les cellules de tableau vides ou avec des pointillés
 - Les choix à faire (OUI/NON, type de fichier, etc.)
 - Les sections descriptives qui doivent être rédigées
+- Les lignes de tableau avec libellé mais colonne valeur vide
+- TOUS les champs même si le template est long — n'en saute aucun
 
 Pour chaque champ détecté, fournis:
-- "id": un identifiant unique court en snake_case
+- "id": un identifiant unique court en snake_case (préfixe avec la section pour éviter les doublons)
 - "label": le nom lisible du champ
 - "section": la section du template où il se trouve
 - "description": ce qui est attendu (basé sur le contexte du template)
@@ -36,10 +38,10 @@ Pour chaque champ détecté, fournis:
 - "required": true/false
 - "options": liste d'options si type="choice", sinon null
 
-Réponds UNIQUEMENT avec un JSON:
+Réponds UNIQUEMENT avec un JSON valide:
 {{
   "template_title": "Titre du template",
-  "sections": ["liste des sections principales"],
+  "sections": ["liste des sections principales de cette partie"],
   "fields": [
     {{
       "id": "...",
@@ -71,13 +73,76 @@ class TemplateAgent:
 
     def detect_fields(self, template_text: str) -> dict:
         """
-        Use LLM to analyze the template and detect all fields/sections to fill.
+        Use LLM to analyze the template and detect ALL fields/sections to fill.
+        Splits long templates into overlapping chunks so no field is ever missed.
         Returns: {template_title, sections, fields: [{id, label, section, description, type, required, options}]}
         """
-        truncated = template_text[:12000]
-        prompt = DETECT_FIELDS_PROMPT.format(template_text=truncated)
-        raw = self.llm.generate(prompt, system_prompt=DETECT_FIELDS_SYSTEM_PROMPT)
-        return self._parse_json_response(raw)
+        CHUNK_SIZE = 10000   # chars per chunk (fits well within gpt-4o-mini context)
+        OVERLAP    = 800     # overlap between chunks so fields near boundaries aren't missed
+
+        # Split template into overlapping chunks
+        chunks = []
+        start = 0
+        while start < len(template_text):
+            end = start + CHUNK_SIZE
+            chunks.append(template_text[start:end])
+            if end >= len(template_text):
+                break
+            start = end - OVERLAP  # back up by overlap so we don't cut mid-section
+
+        total = len(chunks)
+        all_sections: list[str] = []
+        all_fields: list[dict] = []
+        template_title = "Unknown Template"
+        seen_ids: set[str] = set()
+
+        for idx, chunk in enumerate(chunks):
+            prompt = DETECT_FIELDS_PROMPT.format(
+                template_text=chunk,
+                chunk_index=idx + 1,
+                chunk_total=total,
+            )
+            raw = self.llm.generate(prompt, system_prompt=DETECT_FIELDS_SYSTEM_PROMPT)
+            parsed = self._parse_json_response(raw)
+
+            # Take the title from the first chunk only
+            if idx == 0 and parsed.get("template_title"):
+                template_title = parsed["template_title"]
+
+            # Merge sections (deduplicated)
+            for sec in parsed.get("sections", []):
+                if sec and sec not in all_sections:
+                    all_sections.append(sec)
+
+            # Merge fields — deduplicate by id, then by (label+section) similarity
+            for field in parsed.get("fields", []):
+                fid = field.get("id", "").strip()
+                if not fid:
+                    continue
+
+                # If id already seen, try label+section dedup
+                if fid in seen_ids:
+                    label = field.get("label", "").lower().strip()
+                    section = field.get("section", "").lower().strip()
+                    duplicate = any(
+                        f.get("label", "").lower().strip() == label
+                        and f.get("section", "").lower().strip() == section
+                        for f in all_fields
+                    )
+                    if duplicate:
+                        continue
+                    # Different field that happens to have the same id — make id unique
+                    fid = f"{fid}_{idx}"
+                    field["id"] = fid
+
+                seen_ids.add(fid)
+                all_fields.append(field)
+
+        return {
+            "template_title": template_title,
+            "sections": all_sections,
+            "fields": all_fields,
+        }
 
     def _read_pdf(self, file_bytes: bytes) -> str:
         """Extract text from PDF bytes using pdfplumber."""
