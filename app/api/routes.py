@@ -169,6 +169,34 @@ class ExportRequest(BaseModel):
     format: str = "markdown"  # markdown, json
 
 
+# ============== VECTOR STORE REQUEST/RESPONSE MODELS ==============
+
+class AddTemplateRequest(BaseModel):
+    template_text: str
+    template_title: str = "Template"
+
+
+class SearchTemplatesRequest(BaseModel):
+    query: str
+    top_k: int = 5
+
+
+class AddRepositoryFileRequest(BaseModel):
+    file_content: str
+    file_path: str
+    file_type: str  # python, sql, markdown, yaml, json, etc.
+
+
+class SearchRepositoryContentRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    file_type: Optional[str] = None
+
+
+class RepositoryFilesRequest(BaseModel):
+    files: list[dict]  # List of {content, path, type}
+
+
 # ============== CONNECTION ENDPOINTS ==============
 
 @router.post("/connect/github", response_model=ConnectionStatus)
@@ -955,6 +983,325 @@ async def pipeline_step_map(project_id: str, req: PipelineConfirmValuesRequest):
         "spec": spec,
         "validation": validation,
     }
+
+
+# ============== VECTOR STORE ENDPOINTS ==============
+# Separate endpoints for templates and repository content chunking/retrieval
+
+@router.post("/vectorstore/stats")
+async def get_vectorstore_stats():
+    """Get statistics about the vector stores."""
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    return manager.get_statistics()
+
+
+# ──────────────────── TEMPLATES ────────────────────────────
+
+@router.post("/projects/{project_id}/vectorstore/templates/add")
+async def add_template_to_vectorstore(
+    project_id: str,
+    request: AddTemplateRequest,
+):
+    """
+    Add a template to the vector store.
+    Chunks the template and stores all chunks with embeddings.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    result = manager.add_template(
+        template_text=request.template_text,
+        template_title=request.template_title,
+        project_id=project_id,
+    )
+    
+    return {
+        "status": "success",
+        "message": f"Template added: {result['chunks_added']} chunks created",
+        **result
+    }
+
+
+@router.post("/projects/{project_id}/vectorstore/templates/search")
+async def search_templates_in_vectorstore(
+    project_id: str,
+    request: SearchTemplatesRequest,
+):
+    """
+    Search for templates similar to a query.
+    Returns top-k most similar template chunks.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    results = manager.search_templates(
+        query=request.query,
+        project_id=project_id,
+        top_k=request.top_k,
+    )
+    
+    return {
+        "query": request.query,
+        "results_count": len(results),
+        "results": results,
+    }
+
+
+@router.get("/projects/{project_id}/vectorstore/templates/list")
+async def list_project_templates(project_id: str):
+    """
+    Get all templates for a project.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    templates = manager.get_all_templates(project_id)
+    
+    return {
+        "project_id": project_id,
+        "templates_count": len(templates),
+        "templates": templates,
+    }
+
+
+# ──────────────────── REPOSITORY CONTENT ────────────────────────────
+
+@router.post("/projects/{project_id}/vectorstore/content/add")
+async def add_repository_file_to_vectorstore(
+    project_id: str,
+    repo_name: str,
+    request: AddRepositoryFileRequest,
+):
+    """
+    Add a repository file to the vector store.
+    Chunks the file based on its type and stores all chunks with embeddings.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    result = manager.add_repository_content(
+        file_content=request.file_content,
+        file_path=request.file_path,
+        file_type=request.file_type,
+        project_id=project_id,
+        repo_name=repo_name,
+    )
+    
+    return {
+        "status": "success",
+        "message": f"File added: {result['chunks_added']} chunks created",
+        **result
+    }
+
+
+@router.post("/projects/{project_id}/vectorstore/content/add-multiple")
+async def add_multiple_repository_files_to_vectorstore(
+    project_id: str,
+    repo_name: str,
+    request: RepositoryFilesRequest,
+):
+    """
+    Add multiple repository files to the vector store at once.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    results = manager.add_multiple_repository_files(
+        files=request.files,
+        project_id=project_id,
+        repo_name=repo_name,
+    )
+    
+    return {
+        "status": "success",
+        "files_processed": len(request.files),
+        "results": results,
+    }
+
+
+@router.post("/projects/{project_id}/vectorstore/content/search")
+async def search_repository_content_in_vectorstore(
+    project_id: str,
+    request: SearchRepositoryContentRequest,
+):
+    """
+    Search for repository content similar to a query.
+    Returns top-k most similar content chunks.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    results = manager.search_repository_content(
+        query=request.query,
+        project_id=project_id,
+        top_k=request.top_k,
+        file_type=request.file_type,
+    )
+    
+    return {
+        "query": request.query,
+        "results_count": len(results),
+        "results": results,
+    }
+
+
+@router.get("/projects/{project_id}/vectorstore/content/list")
+async def list_project_repository_content(project_id: str):
+    """
+    Get all repository content chunks for a project.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    content = manager.get_all_repository_content(project_id)
+    
+    total_chunks = sum(len(f.get("chunks", [])) for f in content)
+    
+    return {
+        "project_id": project_id,
+        "files_count": len(content),
+        "total_chunks": total_chunks,
+        "files": content,
+    }
+
+
+@router.get("/projects/{project_id}/vectorstore/content/file/{file_id}")
+async def get_full_repository_file(project_id: str, file_id: str):
+    """
+    Reconstruct and get the full content of a file from chunks.
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    file_data = manager.get_file_content(file_id)
+    
+    if not file_data:
+        raise HTTPException(status_code=404, detail=f"File {file_id} not found")
+    
+    return file_data
+
+
+@router.delete("/projects/{project_id}/vectorstore/clear")
+async def clear_project_vectorstore(project_id: str):
+    """
+    Clear all vector store data for a project (both templates and content).
+    """
+    from app.vectorstore import get_vector_manager
+    manager = get_vector_manager()
+    
+    result = manager.clear_project(project_id)
+    
+    return {
+        "status": "success",
+        "message": "Vector store cleared for project",
+        **result
+    }
+
+
+# ──────────────────── INTEGRATED REPOSITORY EMBEDDING ────────────────────────────
+
+@router.post("/projects/{project_id}/vectorstore/github/embed")
+async def embed_github_repository(
+    project_id: str,
+    owner: str,
+    repo_name: str,
+):
+    """
+    Fetch a GitHub repository and embed all its content files into the vector store.
+    This will extract and chunk:
+    - README
+    - Python files
+    - SQL files
+    - YAML/JSON config files
+    - Notebooks
+    """
+    if not connections["github"]:
+        raise HTTPException(status_code=400, detail="Not connected to GitHub")
+    
+    from app.vectorstore import get_vector_manager
+    
+    # Fetch repo metadata
+    try:
+        metadata = connections["github"].get_repo_metadata(owner, repo_name)
+        if not metadata:
+            raise HTTPException(status_code=404, detail="Repository not found")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error fetching repository: {str(e)}")
+    
+    manager = get_vector_manager()
+    
+    # Collect all files to add
+    files_to_add = []
+    
+    # Add README
+    if metadata.get("readme"):
+        files_to_add.append({
+            "content": metadata["readme"],
+            "path": "README.md",
+            "type": "markdown"
+        })
+    
+    # Add Python files
+    for py_file in metadata.get("python_files", []):
+        files_to_add.append({
+            "content": py_file.get("content", ""),
+            "path": py_file.get("path", ""),
+            "type": "python"
+        })
+    
+    # Add SQL files
+    for sql_file in metadata.get("sql_files", []):
+        files_to_add.append({
+            "content": sql_file.get("content", ""),
+            "path": sql_file.get("path", ""),
+            "type": "sql"
+        })
+    
+    # Add YAML files
+    for yaml_file in metadata.get("yaml_files", []):
+        files_to_add.append({
+            "content": yaml_file.get("content", ""),
+            "path": yaml_file.get("path", ""),
+            "type": "yaml"
+        })
+    
+    # Add JSON files
+    for json_file in metadata.get("json_files", []):
+        files_to_add.append({
+            "content": json_file.get("content", ""),
+            "path": json_file.get("path", ""),
+            "type": "json"
+        })
+    
+    # Add Notebook files
+    for nb_file in metadata.get("notebook_files", []):
+        files_to_add.append({
+            "content": nb_file.get("content", ""),
+            "path": nb_file.get("path", ""),
+            "type": "notebook"
+        })
+    
+    # Add all files to vector store
+    results = manager.add_multiple_repository_files(
+        files=files_to_add,
+        project_id=project_id,
+        repo_name=repo_name,
+    )
+    
+    # Count successful additions
+    successful = sum(1 for r in results if "error" not in r)
+    
+    return {
+        "status": "success",
+        "message": f"Repository embedded: {successful}/{len(files_to_add)} files processed",
+        "repo_name": repo_name,
+        "owner": owner,
+        "files_processed": len(files_to_add),
+        "files_successful": successful,
+        "details": results,
+    }
+
 
 
 @router.post("/projects/{project_id}/pipeline/export")
