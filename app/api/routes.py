@@ -52,10 +52,14 @@ async def health_check():
 
 @router.post("/test/vectorstore/init")
 async def test_vectorstore_init():
-    """Test endpoint to initialize vector store and create data folder"""
+    """Test endpoint to initialize vector store and verify both collections"""
     try:
         from app.vectorstore import get_vector_manager
         manager = get_vector_manager()
+        
+        # Verify both collections exist
+        templates_count = manager.templates_collection.count()
+        content_count = manager.content_collection.count()
         
         # Test adding a simple template to trigger folder creation
         result = manager.add_template(
@@ -69,9 +73,94 @@ async def test_vectorstore_init():
         
         return {
             "status": "success",
-            "message": "Vector store initialized",
+            "message": "Vector store initialized with both collections",
             "data_folder_exists": data_dir_exists,
+            "collections": {
+                "templates_collection": {
+                    "count_before": templates_count,
+                    "count_after": manager.templates_collection.count()
+                },
+                "repository_content_collection": {
+                    "count": content_count
+                }
+            },
             "template_result": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@router.post("/test/vectorstore/add-content")
+async def test_add_repository_content():
+    """Test endpoint to add content to repository collection"""
+    try:
+        from app.vectorstore import get_vector_manager
+        manager = get_vector_manager()
+        
+        # Add test content to repository collection
+        result = manager.add_repository_content(
+            file_content="def hello_world():\n    print('Hello, World!')",
+            file_path="examples/hello.py",
+            file_type="python",
+            project_id="test",
+            repo_name="test_repo"
+        )
+        
+        return {
+            "status": "success",
+            "message": "Content added to repository collection",
+            "collections": {
+                "templates_collection": manager.templates_collection.count(),
+                "repository_content_collection": manager.content_collection.count()
+            },
+            "content_result": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+
+@router.get("/test/vectorstore/status")
+async def test_vectorstore_status():
+    """View the status of both vector store collections"""
+    try:
+        from app.vectorstore import get_vector_manager
+        manager = get_vector_manager()
+        
+        templates_count = manager.templates_collection.count()
+        content_count = manager.content_collection.count()
+        
+        import os
+        data_dir_exists = os.path.exists("./data/chroma")
+        data_dir_size = 0
+        if data_dir_exists:
+            for dirpath, dirnames, filenames in os.walk("./data/chroma"):
+                for filename in filenames:
+                    filepath = os.path.join(dirpath, filename)
+                    data_dir_size += os.path.getsize(filepath)
+        
+        return {
+            "status": "ok",
+            "data_folder": {
+                "exists": data_dir_exists,
+                "size_bytes": data_dir_size,
+                "path": "./data/chroma"
+            },
+            "collections": {
+                "templates_collection": {
+                    "chunks_stored": templates_count,
+                    "purpose": "Stores parsed templates with semantic embeddings"
+                },
+                "repository_content_collection": {
+                    "chunks_stored": content_count,
+                    "purpose": "Stores code and repository content with semantic embeddings"
+                }
+            }
         }
     except Exception as e:
         return {
@@ -881,6 +970,19 @@ async def pipeline_step_template(
         "spec": "",
         "validation": None,
     }
+
+    # Automatically add template to vector store
+    try:
+        from app.vectorstore import get_vector_manager
+        manager = get_vector_manager()
+        vs_result = manager.add_template(
+            template_text=template_text,
+            template_title=detected.get("template_title", "Untitled Template"),
+            project_id=project_id,
+        )
+    except Exception as e:
+        # Log error but don't fail the pipeline
+        print(f"Warning: Could not add template to vector store: {e}")
 
     return {
         "template_title": detected.get("template_title", ""),
