@@ -14,7 +14,11 @@ from app.agents.spec_agent import SpecAgent
 from app.agents.orchestrator_agent import OrchestratorAgent
 from app.config.settings import settings
 """from app.auth_sso import get_current_user, require_role"""
+from app.db import SessionLocal
+from app.models import Project, Source
 import json
+import uuid as _uuid
+from datetime import datetime as _dt
 
 router = APIRouter()
 
@@ -28,19 +32,52 @@ connections = {
 }
 specs_cache = {}
 
-# ============== IN-MEMORY PROJECT STORE ==============
-import uuid as _uuid
-from datetime import datetime as _dt
 
-_projects = {}  # id -> project dict
+def get_db():
+    """Get database session"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
-def _new_id():
-    return _uuid.uuid4().hex[:12]
+# ============== HEALTH CHECK & TEST ENDPOINTS ==============
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "ok"}
 
 
-def _now():
-    return _dt.utcnow().isoformat() + "Z"
+@router.post("/test/vectorstore/init")
+async def test_vectorstore_init():
+    """Test endpoint to initialize vector store and create data folder"""
+    try:
+        from app.vectorstore import get_vector_manager
+        manager = get_vector_manager()
+        
+        # Test adding a simple template to trigger folder creation
+        result = manager.add_template(
+            template_text="Test template for initialization",
+            template_title="Vector Store Init Test",
+            project_id="test"
+        )
+        
+        import os
+        data_dir_exists = os.path.exists("./data/chroma")
+        
+        return {
+            "status": "success",
+            "message": "Vector store initialized",
+            "data_folder_exists": data_dir_exists,
+            "template_result": result
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 
 # ============== REQUEST / RESPONSE MODELS ==============
@@ -652,36 +689,11 @@ async def chat(request: ChatRequest):
 _pipeline_state = {}  # project_id -> {step, template_text, placeholders, values, spec, validation}
 
 
-def _get_source_content_for_project(project_id: str) -> str:
+def _get_source_content_for_project(project_id: str, db) -> str:
     """Gather content snippets from all connected sources for a project."""
-    p = _projects.get(project_id)
-    if not p:
-        return ""
-    parts = []
-    for src in p.get("sources", []):
-        cfg = src.get("config", {})
-        stype = src.get("type", "")
-        label = src.get("label", stype)
-        # For GitHub sources, fetch repo metadata
-        if stype == "github" and connections.get("github"):
-            owner = cfg.get("owner", "")
-            repo = cfg.get("repo", "")
-            if owner and repo:
-                try:
-                    meta = connections["github"].get_repo_metadata(owner, repo)
-                    readme = (meta.get("readme") or "")[:2000]
-                    parts.append(f"[Source: {label} (GitHub)]\n{readme}")
-                except Exception:
-                    parts.append(f"[Source: {label} (GitHub)] — could not fetch metadata")
-        elif stype == "text":
-            parts.append(f"[Source: {label} (Text)]\n{cfg.get('content', '')[:2000]}")
-        elif stype == "url":
-            parts.append(f"[Source: {label} (URL)]\nURL: {cfg.get('url', '')}")
-        elif stype == "api":
-            parts.append(f"[Source: {label} (API)]\nEndpoint: {cfg.get('url', '')}")
-        else:
-            parts.append(f"[Source: {label} ({stype})] config={json.dumps(cfg)[:500]}")
-    return "\n\n---\n\n".join(parts)
+    # TODO: Implement source management in database
+    # For now, return empty since sources aren't persisted yet
+    return ""
 
 
 def _build_datasource_context() -> str:
@@ -837,9 +849,10 @@ def _build_datasource_context() -> str:
 async def pipeline_step_template(
     project_id: str,
     template_file: UploadFile = File(...),
+    db=Depends(get_db),
 ):
     """Step 1: Parse template, extract placeholders using TemplateAgent."""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
 
@@ -877,9 +890,13 @@ async def pipeline_step_template(
 
 
 @router.post("/projects/{project_id}/pipeline/extract")
-async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholdersRequest):
+async def pipeline_step_extract(
+    project_id: str,
+    req: PipelineConfirmPlaceholdersRequest,
+    db=Depends(get_db),
+):
     """Step 2: With confirmed placeholders, extract values from all connected sources."""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     state = _pipeline_state.get(project_id)
@@ -891,15 +908,15 @@ async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholder
     state["step"] = "extract"
 
     # Gather source content as a pseudo-metadata dict
-    source_content = _get_source_content_for_project(project_id)
+    source_content = _get_source_content_for_project(project_id, db)
 
     # Build live data source schema context from all connected sources
     datasource_context = _build_datasource_context()
 
     metadata = {
-        "repo_name": p["name"],
+        "repo_name": p.name,
         "owner": "",
-        "description": p.get("description", ""),
+        "description": p.description or "",
         "readme": source_content,
         "languages": "",
         "topics": "",
@@ -929,10 +946,7 @@ async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholder
         else:
             confidence = "high"
 
-        source_label = "Sources"
-        for src in p.get("sources", []):
-            source_label = src.get("label", src.get("type", "Source"))
-            break  # just first source for now
+        source_label = p.name if p else "Sources"  # Use project name as source
 
         results.append({
             "id": fid,
@@ -951,9 +965,13 @@ async def pipeline_step_extract(project_id: str, req: PipelineConfirmPlaceholder
 
 
 @router.post("/projects/{project_id}/pipeline/map")
-async def pipeline_step_map(project_id: str, req: PipelineConfirmValuesRequest):
+async def pipeline_step_map(
+    project_id: str,
+    req: PipelineConfirmValuesRequest,
+    db=Depends(get_db),
+):
     """Step 3: With confirmed values, compose the final spec via MappingAgent."""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     state = _pipeline_state.get(project_id)
@@ -1002,11 +1020,16 @@ async def get_vectorstore_stats():
 async def add_template_to_vectorstore(
     project_id: str,
     request: AddTemplateRequest,
+    db=Depends(get_db),
 ):
     """
     Add a template to the vector store.
     Chunks the template and stores all chunks with embeddings.
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     from app.vectorstore import get_vector_manager
     manager = get_vector_manager()
     
@@ -1027,11 +1050,16 @@ async def add_template_to_vectorstore(
 async def search_templates_in_vectorstore(
     project_id: str,
     request: SearchTemplatesRequest,
+    db=Depends(get_db),
 ):
     """
     Search for templates similar to a query.
     Returns top-k most similar template chunks.
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     from app.vectorstore import get_vector_manager
     manager = get_vector_manager()
     
@@ -1072,11 +1100,16 @@ async def add_repository_file_to_vectorstore(
     project_id: str,
     repo_name: str,
     request: AddRepositoryFileRequest,
+    db=Depends(get_db),
 ):
     """
     Add a repository file to the vector store.
     Chunks the file based on its type and stores all chunks with embeddings.
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     from app.vectorstore import get_vector_manager
     manager = get_vector_manager()
     
@@ -1100,10 +1133,15 @@ async def add_multiple_repository_files_to_vectorstore(
     project_id: str,
     repo_name: str,
     request: RepositoryFilesRequest,
+    db=Depends(get_db),
 ):
     """
     Add multiple repository files to the vector store at once.
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     from app.vectorstore import get_vector_manager
     manager = get_vector_manager()
     
@@ -1124,11 +1162,16 @@ async def add_multiple_repository_files_to_vectorstore(
 async def search_repository_content_in_vectorstore(
     project_id: str,
     request: SearchRepositoryContentRequest,
+    db=Depends(get_db),
 ):
     """
     Search for repository content similar to a query.
     Returns top-k most similar content chunks.
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     from app.vectorstore import get_vector_manager
     manager = get_vector_manager()
     
@@ -1206,6 +1249,7 @@ async def embed_github_repository(
     project_id: str,
     owner: str,
     repo_name: str,
+    db=Depends(get_db),
 ):
     """
     Fetch a GitHub repository and embed all its content files into the vector store.
@@ -1216,6 +1260,10 @@ async def embed_github_repository(
     - YAML/JSON config files
     - Notebooks
     """
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     if not connections["github"]:
         raise HTTPException(status_code=400, detail="Not connected to GitHub")
     
@@ -1305,8 +1353,12 @@ async def embed_github_repository(
 
 
 @router.post("/projects/{project_id}/pipeline/export")
-async def pipeline_step_export(project_id: str, req: ExportRequest):
+async def pipeline_step_export(project_id: str, req: ExportRequest, db=Depends(get_db)):
     """Step 4: Return the finalized spec in the requested format."""
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
     state = _pipeline_state.get(project_id)
     if not state or not state.get("spec"):
         raise HTTPException(status_code=400, detail="No spec to export. Complete the pipeline first.")
@@ -1351,20 +1403,17 @@ async def pipeline_get_state(project_id: str):
 
 
 @router.post("/projects/{project_id}/chat")
-async def project_chat(project_id: str, req: ProjectChatRequest):
+async def project_chat(project_id: str, req: ProjectChatRequest, db=Depends(get_db)):
     """Project-aware chat powered by gpt-4o-mini with full context injection."""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
 
     state = _pipeline_state.get(project_id, {})
 
-    # Gather source snippets
+    # Gather source snippets (TODO: implement source persistence in DB)
     source_lines = []
-    for src in p.get("sources", []):
-        cfg = src.get("config", {})
-        source_lines.append(f"- {src.get('label', '')} ({src.get('type', '')}) config={json.dumps(cfg)[:200]}")
-    sources_text = "\n".join(source_lines) if source_lines else "No sources connected."
+    sources_text = "No sources connected."
 
     # Build live data source context (real schemas, tables, files from connected sources)
     live_datasource_context = _build_datasource_context()
@@ -1374,8 +1423,8 @@ async def project_chat(project_id: str, req: ProjectChatRequest):
         "You are a helpful data engineering assistant for a spec-generation platform called Jems Spec Generator.",
         "You have access to the real schemas, tables, and content of the connected data sources listed below.",
         "Use this information to answer questions precisely — reference actual table names, column names, and data structures when relevant.",
-        f"Current project: {p['name']}",
-        f"Project description: {p.get('description', 'N/A')}",
+        f"Current project: {p.name}",
+        f"Project description: {p.description or 'N/A'}",
         f"Connected sources (project config):\n{sources_text}",
         f"Live data source context (real schemas and content):\n{live_datasource_context}",
         f"Current pipeline step: {req.pipeline_step or state.get('step', 'none')}",
@@ -1416,58 +1465,133 @@ async def project_chat(project_id: str, req: ProjectChatRequest):
 # ============== PROJECT ENDPOINTS ==============
 
 @router.get("/projects")
-async def list_projects():
+async def list_projects(db=Depends(get_db)):
     """List all projects (newest first)"""
-    items = sorted(_projects.values(), key=lambda p: p["created_at"], reverse=True)
-    return {"projects": items}
+    projects = db.query(Project).order_by(Project.created_at.desc()).all()
+    return {
+        "projects": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "description": p.description,
+                "created_at": p.created_at.isoformat() if p.created_at else "",
+                "sources": [
+                    {
+                        "id": s.id,
+                        "type": s.type,
+                        "type_name": s.type_name,
+                        "icon": s.icon,
+                        "label": s.label,
+                        "config": s.config,
+                        "status": s.status,
+                        "added_at": s.added_at.isoformat() if s.added_at else "",
+                    }
+                    for s in p.sources
+                ],
+            }
+            for p in projects
+        ]
+    }
 
 
 @router.post("/projects")
-async def create_project(req: CreateProjectRequest):
+async def create_project(req: CreateProjectRequest, db=Depends(get_db)):
     """Create a new project"""
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Project name is required")
-    pid = _new_id()
-    project = {
-        "id": pid,
-        "name": name,
-        "description": req.description.strip(),
+    
+    project = Project(
+        id=_uuid.uuid4().hex[:12],
+        name=name,
+        description=req.description.strip()
+    )
+    db.add(project)
+    db.commit()
+    db.refresh(project)
+    
+    return {
+        "id": project.id,
+        "name": project.name,
+        "description": project.description,
+        "created_at": project.created_at.isoformat() if project.created_at else "",
         "sources": [],
-        "created_at": _now(),
     }
-    _projects[pid] = project
-    return project
 
 
 @router.get("/projects/{project_id}")
-async def get_project(project_id: str):
+async def get_project(project_id: str, db=Depends(get_db)):
     """Get a single project by ID"""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    return p
+    return {
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "created_at": p.created_at.isoformat() if p.created_at else "",
+        "sources": [
+            {
+                "id": s.id,
+                "type": s.type,
+                "type_name": s.type_name,
+                "icon": s.icon,
+                "label": s.label,
+                "config": s.config,
+                "status": s.status,
+                "added_at": s.added_at.isoformat() if s.added_at else "",
+            }
+            for s in p.sources
+        ],
+    }
 
 
 @router.put("/projects/{project_id}")
-async def update_project(project_id: str, req: UpdateProjectRequest):
+async def update_project(project_id: str, req: UpdateProjectRequest, db=Depends(get_db)):
     """Update project name/description"""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
+    
     if req.name is not None:
-        p["name"] = req.name.strip()
+        p.name = req.name.strip()
     if req.description is not None:
-        p["description"] = req.description.strip()
-    return p
+        p.description = req.description.strip()
+    
+    db.commit()
+    db.refresh(p)
+    
+    return {
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "created_at": p.created_at.isoformat() if p.created_at else "",
+        "sources": [
+            {
+                "id": s.id,
+                "type": s.type,
+                "type_name": s.type_name,
+                "icon": s.icon,
+                "label": s.label,
+                "config": s.config,
+                "status": s.status,
+                "added_at": s.added_at.isoformat() if s.added_at else "",
+            }
+            for s in p.sources
+        ],
+    }
 
 
 @router.delete("/projects/{project_id}")
-async def delete_project(project_id: str):
+async def delete_project(project_id: str, db=Depends(get_db)):
     """Delete a project"""
-    if project_id not in _projects:
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    del _projects[project_id]
+    
+    db.delete(p)
+    db.commit()
+    
     return {"ok": True}
 
 
@@ -1490,9 +1614,9 @@ SOURCE_TYPES = {
 
 
 @router.post("/projects/{project_id}/sources")
-async def add_source(project_id: str, req: AddSourceRequest):
+async def add_source(project_id: str, req: AddSourceRequest, db=Depends(get_db)):
     """Add a source to a project"""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
     stype = req.type.lower()
@@ -1500,30 +1624,49 @@ async def add_source(project_id: str, req: AddSourceRequest):
         raise HTTPException(status_code=400, detail=f"Unknown source type: {stype}")
 
     meta = SOURCE_TYPES[stype]
-    source = {
-        "id": _new_id(),
-        "type": stype,
-        "type_name": meta["name"],
-        "icon": meta["icon"],
-        "label": req.label.strip() or meta["name"],
-        "config": req.config,
-        "status": "connected",
-        "added_at": _now(),
+    source = Source(
+        id=_uuid.uuid4().hex[:12],
+        project_id=project_id,
+        type=stype,
+        type_name=meta["name"],
+        icon=meta["icon"],
+        label=req.label.strip() or meta["name"],
+        config=req.config or {},
+        status="connected",
+    )
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+    
+    return {
+        "id": source.id,
+        "type": source.type,
+        "type_name": source.type_name,
+        "icon": source.icon,
+        "label": source.label,
+        "config": source.config,
+        "status": source.status,
+        "added_at": source.added_at.isoformat() if source.added_at else "",
     }
-    p["sources"].append(source)
-    return source
 
 
 @router.delete("/projects/{project_id}/sources/{source_id}")
-async def remove_source(project_id: str, source_id: str):
+async def remove_source(project_id: str, source_id: str, db=Depends(get_db)):
     """Remove a source from a project"""
-    p = _projects.get(project_id)
+    p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
-    before = len(p["sources"])
-    p["sources"] = [s for s in p["sources"] if s["id"] != source_id]
-    if len(p["sources"]) == before:
+    
+    source = db.query(Source).filter(
+        Source.id == source_id,
+        Source.project_id == project_id
+    ).first()
+    if not source:
         raise HTTPException(status_code=404, detail="Source not found")
+    
+    db.delete(source)
+    db.commit()
+    
     return {"ok": True}
 
 
