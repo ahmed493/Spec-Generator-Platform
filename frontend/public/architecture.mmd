@@ -1,0 +1,99 @@
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor":       "#0e3535",
+    "primaryTextColor":   "#ffffff",
+    "primaryBorderColor": "#FF3CAC",
+    "lineColor":          "#FF7A3C",
+    "secondaryColor":     "#1a2f5a",
+    "tertiaryColor":      "#0f2b3d",
+    "background":         "#0b1630",
+    "mainBkg":            "#0e3535",
+    "nodeBorder":         "#FF3CAC",
+    "clusterBkg":         "#0d1e38",
+    "clusterBorder":      "rgba(255,122,60,0.3)",
+    "titleColor":         "#FFD43B",
+    "edgeLabelBackground":"#111e3e",
+    "fontFamily":         "Arial, sans-serif",
+    "fontSize":           "14px"
+  }
+}}%%
+flowchart TB
+
+  classDef frontend   fill:#1a2f5a,stroke:#FFD43B,color:#ffffff,stroke-width:1.5px;
+  classDef api        fill:#0f2b3d,stroke:#FF7A3C,color:#ffffff,stroke-width:1.5px;
+  classDef agent      fill:#0e3535,stroke:#FF3CAC,color:#ffffff,stroke-width:1.5px;
+  classDef orch       fill:#2a0d2e,stroke:#FF3CAC,color:#ffffff,stroke-width:2px;
+  classDef llm        fill:#2a1a10,stroke:#FF7A3C,color:#ffffff,stroke-width:2px;
+  classDef parser     fill:#1a3020,stroke:#FFD43B,color:#e8edf8,stroke-width:1.5px;
+  classDef storage    fill:#1a1a2e,stroke:#9b8af4,color:#e8edf8,stroke-width:1.5px;
+  classDef integ      fill:#1d1a08,stroke:#FFD43B,color:#e8edf8,stroke-width:1.5px;
+
+  Browser(["Browser\nReact SPA"])
+
+  subgraph FE["Frontend  (React + Vite)"]
+    direction TB
+    UI["Pages\nConnections / Explorer / SpecPage"]
+    API_JS["api.js\nHTTP + FormData client"]
+  end
+
+  subgraph BE["Backend  (FastAPI + Uvicorn)"]
+    direction TB
+    Routes["Routes\n/api/generate-spec-from-template\n/api/connections  /api/repos"]
+  end
+
+  subgraph PIPE["Agent Pipeline"]
+    direction TB
+    Orch["Orchestrator Agent\nWorkflow / retries / logs"]
+    Template["Template Agent\nPDF/MD reader\nLLM field detection"]
+    Extraction["Extraction Agent\nRepo metadata -> field values"]
+    Mapping["Mapping Agent\nTemplate + values -> Markdown spec"]
+    Validation["Validation Agent\nRequired fields / warnings / report"]
+  end
+
+  subgraph TOOLS["Workers & Storage"]
+    direction LR
+    PDFParse["pdfplumber\nPDF parser"]
+    SpecDB[("Spec Store\nMarkdown / DB / S3")]
+  end
+
+  LLM(["OpenAI GPT-4o\nLLM provider"])
+
+  subgraph EXT["External Integrations"]
+    direction LR
+    GH["GitHub\nRepo files / metadata"]
+    GCS["GCS\nCloud Storage"]
+    BQ["BigQuery"]
+    PG["PostgreSQL\nApp DB"]
+    PB["PowerBI\nBI export"]
+  end
+
+  Browser --> UI
+  UI --> API_JS
+  API_JS -->|"multipart/form-data"| Routes
+  Routes --> Orch
+  Orch --> Template
+  Orch --> Extraction
+  Orch --> Mapping
+  Orch --> Validation
+  Template --> PDFParse
+  Template -->|"detect fields"| LLM
+  Extraction -->|"field values"| LLM
+  Extraction --> GH
+  Extraction --> GCS
+  Extraction --> BQ
+  Extraction --> PG
+  Mapping -->|"compose spec"| LLM
+  Mapping --> SpecDB
+  Validation -->|"validate"| LLM
+  Validation --> SpecDB
+  SpecDB -->|"spec Markdown"| Routes
+
+  class Browser,UI,API_JS frontend;
+  class Routes api;
+  class Orch orch;
+  class Template,Extraction,Mapping,Validation agent;
+  class PDFParse parser;
+  class SpecDB storage;
+  class LLM llm;
+  class GH,GCS,BQ,PG,PB integ;

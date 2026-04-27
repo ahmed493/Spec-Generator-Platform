@@ -11,7 +11,7 @@ export default function ExtractionStep() {
   const [error, setError] = useState(null)
   const [results, setResults] = useState(extractionResults)
 
-  const confirmed = gates[1]
+  const confirmed = gates[2]
 
   // Auto-run extraction on mount if not yet done
   useEffect(() => {
@@ -45,7 +45,7 @@ export default function ExtractionStep() {
     const values = {}
     results.forEach(r => { values[r.id] = r.value })
     dispatch({ type: 'SET_CONFIRMED_VALUES', payload: values })
-    dispatch({ type: 'CONFIRM_GATE', payload: 1 })
+    dispatch({ type: 'CONFIRM_GATE', payload: 2 })
   }
 
   const filledCount = results.filter(r => r.value && r.confidence !== 'low').length
@@ -61,7 +61,7 @@ export default function ExtractionStep() {
   return (
     <div className="pipeline-step">
       <div className="ps-header">
-        <h3>Step 2 — Extraction Agent</h3>
+        <h3>Step 3 — Extraction Agent</h3>
         <p>Values are extracted from your connected sources for each placeholder.</p>
       </div>
 
@@ -129,7 +129,7 @@ export default function ExtractionStep() {
 
       {!loading && results.length > 0 && (
         <ValidationGate
-          title="Validation Gate 2 — Confirm Extracted Values"
+          title="Validation Gate 3 — Confirm Extracted Values"
           summary={`${filledCount} of ${results.length} values filled.`}
           items={gateItems}
           confirmed={confirmed}

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Download, FileText, FileJson, Copy, Check, Calendar, Layers, Database } from 'lucide-react'
 import { useProject } from '../../context/ProjectContext'
-import { pipelineExport } from '../../api'
+import { pipelineDiffSpecVersions, pipelineExport, pipelineGetSpecVersions, pipelinePromoteSpecVersion } from '../../api'
+import { useEffect } from 'react'
 
 const FORMATS = [
   { id: 'markdown', label: 'Markdown (.md)', icon: FileText },
@@ -9,13 +10,50 @@ const FORMATS = [
 ]
 
 export default function ExportStep() {
-  const { state } = useProject()
-  const { project, spec, placeholders, validation } = state
+  const { state, dispatch } = useProject()
+  const { project, spec, placeholders, validation, specVersions, approvedVersionId } = state
   const [selectedFormat, setSelectedFormat] = useState('markdown')
   const [loading, setLoading] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [fromVersionId, setFromVersionId] = useState('')
+  const [toVersionId, setToVersionId] = useState('')
+  const [diffData, setDiffData] = useState(null)
 
   const sourceCount = project?.sources?.length || 0
+
+  useEffect(() => {
+    const loadVersions = async () => {
+      if (!project) return
+      try {
+        const res = await pipelineGetSpecVersions(project.id)
+        const versions = res.data.versions || []
+        dispatch({ type: 'SET_SPEC_VERSIONS', payload: versions })
+        dispatch({ type: 'SET_APPROVED_VERSION', payload: res.data.approved_version_id || null })
+        if (versions.length > 0) {
+          const last = versions[versions.length - 1]
+          const prev = versions.length > 1 ? versions[versions.length - 2] : last
+          setFromVersionId(prev.id)
+          setToVersionId(last.id)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    loadVersions()
+  }, [project, dispatch])
+
+  useEffect(() => {
+    const loadDiff = async () => {
+      if (!project || !fromVersionId || !toVersionId) return
+      try {
+        const res = await pipelineDiffSpecVersions(project.id, fromVersionId, toVersionId)
+        setDiffData(res.data)
+      } catch {
+        setDiffData(null)
+      }
+    }
+    loadDiff()
+  }, [project, fromVersionId, toVersionId])
 
   const handleDownload = async () => {
     if (!project) return
@@ -47,10 +85,22 @@ export default function ExportStep() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const handlePromote = async () => {
+    if (!project || !toVersionId) return
+    try {
+      const res = await pipelinePromoteSpecVersion(project.id, toVersionId)
+      dispatch({ type: 'SET_APPROVED_VERSION', payload: res.data.approved_version_id })
+      const refresh = await pipelineGetSpecVersions(project.id)
+      dispatch({ type: 'SET_SPEC_VERSIONS', payload: refresh.data.versions || [] })
+    } catch {
+      // ignore
+    }
+  }
+
   return (
     <div className="pipeline-step">
       <div className="ps-header">
-        <h3>Step 4 — Export</h3>
+        <h3>Step 5 — Export</h3>
         <p>Your specification is ready. Choose a format and download.</p>
       </div>
 
@@ -118,6 +168,47 @@ export default function ExportStep() {
           {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy Markdown</>}
         </button>
       </div>
+
+      <div className="export-summary">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+          <h4 style={{ margin: 0, fontSize: '13px' }}>Spec Versions</h4>
+          <button className="btn btn-primary" onClick={handlePromote} disabled={!toVersionId || approvedVersionId === toVersionId}>
+            {approvedVersionId === toVersionId ? 'Approved' : 'Promote to Approved'}
+          </button>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+          <select value={fromVersionId} onChange={(e) => setFromVersionId(e.target.value)}>
+            {specVersions.map(v => (
+              <option key={v.id} value={v.id}>From v{v.version_number} ({v.status})</option>
+            ))}
+          </select>
+          <select value={toVersionId} onChange={(e) => setToVersionId(e.target.value)}>
+            {specVersions.map(v => (
+              <option key={v.id} value={v.id}>To v{v.version_number} ({v.status})</option>
+            ))}
+          </select>
+        </div>
+        <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+          Current approved version: {approvedVersionId || 'None'}
+        </div>
+      </div>
+
+      {diffData && (
+        <div className="spec-diff-grid">
+          <div className="export-preview">
+            <h4>From Version</h4>
+            <pre className="ep-content">{diffData.from_spec}</pre>
+          </div>
+          <div className="export-preview">
+            <h4>To Version</h4>
+            <pre className="ep-content">{diffData.to_spec}</pre>
+          </div>
+          <div className="export-preview" style={{ gridColumn: '1 / -1' }}>
+            <h4>Diff</h4>
+            <pre className="ep-content">{diffData.diff || 'No differences'}</pre>
+          </div>
+        </div>
+      )}
 
       {/* Spec preview */}
       {spec && (

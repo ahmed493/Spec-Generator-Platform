@@ -8,7 +8,7 @@ from pydantic import ConfigDict
 class Settings(BaseSettings):
     # LLM Provider Selection
     llm_provider: str = "openai"  # Options: "openai", "anthropic", "ollama"
-    
+
     # GitHub
     github_token: str = ""
 

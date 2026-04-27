@@ -3,7 +3,7 @@ import { getProject } from '../api'
 
 const ProjectContext = createContext(null)
 
-const STEPS = ['template', 'extraction', 'mapping', 'export']
+const STEPS = ['pipelines', 'template', 'extraction', 'mapping', 'export']
 
 const initialState = {
   // Navigation
@@ -12,14 +12,22 @@ const initialState = {
   project: null,
   projectId: null,
   // Pipeline
-  pipelineStep: 0,            // 0-3 index into STEPS
-  gates: [false, false, false], // confirmed flags for gates 1-3
+  pipelineStep: 0,            // 0-4 index into STEPS
+  gates: [false, false, false, false], // confirmed flags for gates 0-3
+  // Pipeline detection (step 0)
+  detectedPipelines: [],
+  selectedPipeline: null,     // the pipeline dict the user chose
+  // Template (step 1)
   templateTitle: '',
   placeholders: [],
+  // Extraction (step 2)
   extractionResults: [],
   confirmedValues: {},
+  // Mapping / Export (steps 3-4)
   spec: '',
   validation: null,
+  specVersions: [],
+  approvedVersionId: null,
   // Chat
   chatOpen: false,
   chatHistory: [],
@@ -36,13 +44,17 @@ function reducer(state, action) {
         project: action.payload,
         projectId: action.payload.id,
         pipelineStep: 0,
-        gates: [false, false, false],
+        gates: [false, false, false, false],
+        detectedPipelines: [],
+        selectedPipeline: null,
         templateTitle: '',
         placeholders: [],
         extractionResults: [],
         confirmedValues: {},
         spec: '',
         validation: null,
+        specVersions: [],
+        approvedVersionId: null,
         chatHistory: [],
       }
     case 'SET_PROJECT':
@@ -53,12 +65,16 @@ function reducer(state, action) {
     // Pipeline
     case 'SET_PIPELINE_STEP':
       return { ...state, pipelineStep: action.payload }
+    case 'SET_DETECTED_PIPELINES':
+      return { ...state, detectedPipelines: action.payload }
+    case 'SET_SELECTED_PIPELINE':
+      return { ...state, selectedPipeline: action.payload }
     case 'SET_TEMPLATE_RESULT':
       return {
         ...state,
         templateTitle: action.payload.template_title || '',
         placeholders: action.payload.placeholders || [],
-        pipelineStep: 0,
+        pipelineStep: 1,
       }
     case 'UPDATE_PLACEHOLDERS':
       return { ...state, placeholders: action.payload }
@@ -72,7 +88,18 @@ function reducer(state, action) {
     case 'SET_CONFIRMED_VALUES':
       return { ...state, confirmedValues: action.payload }
     case 'SET_SPEC':
-      return { ...state, spec: action.payload.spec, validation: action.payload.validation }
+      return {
+        ...state,
+        spec: action.payload.spec,
+        validation: action.payload.validation,
+        specVersions: action.payload.version
+          ? [...state.specVersions, action.payload.version]
+          : state.specVersions,
+      }
+    case 'SET_SPEC_VERSIONS':
+      return { ...state, specVersions: action.payload }
+    case 'SET_APPROVED_VERSION':
+      return { ...state, approvedVersionId: action.payload }
 
     // Chat
     case 'TOGGLE_CHAT':

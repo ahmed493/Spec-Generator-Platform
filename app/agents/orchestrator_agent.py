@@ -24,17 +24,30 @@ class OrchestratorAgent:
         self.mapping_agent = MappingAgent(self.llm)
         self.validation_agent = ValidationAgent()
 
-    def generate(self, file_bytes: bytes, filename: str, repo_metadata: dict) -> dict:
+    def generate(self, file_bytes: bytes, filename: str, repo_metadata: dict,
+                 pipeline: dict | None = None) -> dict:
         """
         Full pipeline: read file → detect fields → extract → compose → validate.
 
-        Returns:
-        - spec: the final filled specification (Markdown)
-        - template_text: raw text extracted from the uploaded file
-        - fields: list of detected fields
-        - extracted_values: raw extracted values per field
-        - validation: validation report
+        pipeline (optional): a pipeline dict from PipelineDetectionAgent
+          {id, name, description, type, source_files, source_tables, technologies}
+          When provided the extraction prompt is scoped to that specific pipeline.
         """
+
+        # Inject pipeline context into metadata so ExtractionAgent focuses on it
+        if pipeline:
+            pipeline_ctx = (
+                f"\n## Flux / Pipeline ciblé pour cette spécification:\n"
+                f"- Nom: {pipeline.get('name', '')}\n"
+                f"- Description: {pipeline.get('description', '')}\n"
+                f"- Type: {pipeline.get('type', '')}\n"
+                f"- Fichiers sources: {', '.join(pipeline.get('source_files', []))}\n"
+                f"- Tables sources: {', '.join(pipeline.get('source_tables', []))}\n"
+                f"- Technologies: {', '.join(pipeline.get('technologies', []))}\n"
+            )
+            existing = repo_metadata.get("datasource_context", "")
+            repo_metadata = {**repo_metadata,
+                             "datasource_context": pipeline_ctx + "\n" + existing}
 
         # Step 1: Read uploaded file (PDF or text)
         template_text = self.template_agent.read_file(file_bytes, filename)

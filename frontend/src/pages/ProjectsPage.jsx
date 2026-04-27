@@ -3,11 +3,12 @@ import {
   Plus, FolderOpen, Trash2, ArrowLeft, Zap, Loader2, X,
   CheckCircle, AlertCircle, Link2, FileText, Globe, AlignLeft,
   Github, Database, Cloud, BarChart3, HardDrive, BookOpen, FileSpreadsheet,
-  Search, Unplug,
+  Search, Unplug, ScrollText, Download, Copy, Check,
 } from 'lucide-react'
 import {
   getProjects, createProject, deleteProject,
   getProject, addProjectSource, removeProjectSource,
+  getProjectApprovedSpecs,
   getConnections,
   getGitHubRepos, getBigQueryDatasets, getPostgreSQLSchemas,
   getPowerBIWorkspaces, getGCSBuckets,
@@ -365,6 +366,40 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
   const [removing, setRemoving] = useState(null)
   const [showAddSource, setShowAddSource] = useState(false)
   const [message, setMessage] = useState(null)
+  const [approvedSpecs, setApprovedSpecs] = useState([])
+  const [specsLoading, setSpecsLoading] = useState(true)
+  const [viewingSpec, setViewingSpec] = useState(null)
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await getProjectApprovedSpecs(project.id)
+        setApprovedSpecs(res.data.approved_specs || [])
+      } catch {
+        setApprovedSpecs([])
+      }
+      setSpecsLoading(false)
+    }
+    load()
+  }, [project.id])
+
+  const handleDownloadSpec = (entry) => {
+    const blob = new Blob([entry.spec], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${project.name.replace(/\s+/g, '_')}_v${entry.version_number}_approved.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleCopySpec = (spec) => {
+    navigator.clipboard.writeText(spec).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   const sources = project.sources || []
   const connectedCount = sources.filter(s => s.status === 'connected').length
@@ -489,6 +524,122 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
             onClick={() => onStartPipeline(project)}>
             <Zap size={14} /> Generate Spec from {sources.length} source{sources.length !== 1 ? 's' : ''} →
           </button>
+        </div>
+      )}
+
+      {/* ── Generated Specs ───────────────────────────────────── */}
+      <div style={{ marginTop: 36 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
+          <h3 className="section-title" style={{ margin:0 }}>
+            <ScrollText size={16} /> Generated Specs
+          </h3>
+          {approvedSpecs.length > 0 && (
+            <span className="source-count-badge">{approvedSpecs.length}</span>
+          )}
+        </div>
+
+        {specsLoading && (
+          <div className="loading"><div className="spinner" /><span>Loading specs…</span></div>
+        )}
+
+        {!specsLoading && approvedSpecs.length === 0 && (
+          <div className="sources-empty-state">
+            <div className="se-icon-wrap"><ScrollText size={22} /></div>
+            <div className="se-title">No approved specs yet</div>
+            <p className="se-desc">
+              Run the pipeline wizard and promote a spec version to Approved — it will appear here.
+            </p>
+          </div>
+        )}
+
+        {!specsLoading && approvedSpecs.length > 0 && (
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {[...approvedSpecs].reverse().map((entry) => (
+              <div key={entry.version_id} style={{
+                background: 'var(--bg-elevated)',
+                border: '1px solid var(--border)',
+                borderRadius: 10,
+                padding: '14px 18px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 16,
+                flexWrap: 'wrap',
+              }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:200 }}>
+                  <div style={{
+                    background: 'rgba(52,211,153,.12)',
+                    color: 'var(--success)',
+                    borderRadius: 999,
+                    padding: '3px 10px',
+                    fontSize: 11,
+                    fontWeight: 700,
+                    border: '1px solid rgba(52,211,153,.22)',
+                    whiteSpace: 'nowrap',
+                  }}>v{entry.version_number} approved</div>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:14, color:'var(--text-primary)' }}>
+                      {entry.pipeline_name}
+                    </div>
+                    <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:2 }}>
+                      {new Date(entry.approved_at).toLocaleString('en-US', {
+                        month:'short', day:'numeric', year:'numeric',
+                        hour:'2-digit', minute:'2-digit',
+                      })}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:8 }}>
+                  <button className="btn btn-secondary" style={{ padding:'6px 14px', fontSize:12 }}
+                    onClick={() => setViewingSpec(entry)}>
+                    <FileText size={13} /> View
+                  </button>
+                  <button className="btn btn-secondary" style={{ padding:'6px 14px', fontSize:12 }}
+                    onClick={() => handleDownloadSpec(entry)}>
+                    <Download size={13} /> Download
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Spec viewer modal */}
+      {viewingSpec && (
+        <div className="modal-overlay" onClick={() => setViewingSpec(null)}>
+          <div className="modal" style={{ maxWidth:820, width:'95vw', maxHeight:'85vh', display:'flex', flexDirection:'column' }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexShrink:0 }}>
+              <div>
+                <span style={{ fontWeight:700, fontSize:15 }}>
+                  {viewingSpec.pipeline_name} — v{viewingSpec.version_number}
+                </span>
+                <span style={{
+                  marginLeft:10, fontSize:11, fontWeight:700,
+                  background:'rgba(52,211,153,.12)', color:'var(--success)',
+                  border:'1px solid rgba(52,211,153,.22)', borderRadius:999, padding:'2px 9px',
+                }}>Approved</span>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button className="btn btn-secondary" style={{ padding:'5px 12px', fontSize:12 }}
+                  onClick={() => handleCopySpec(viewingSpec.spec)}>
+                  {copied ? <Check size={13} /> : <Copy size={13} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+                <button className="btn btn-secondary" style={{ padding:'5px 12px', fontSize:12 }}
+                  onClick={() => handleDownloadSpec(viewingSpec)}>
+                  <Download size={13} /> Download
+                </button>
+                <button className="btn-icon" onClick={() => setViewingSpec(null)}><X size={16} /></button>
+              </div>
+            </div>
+            <pre style={{
+              flex:1, overflow:'auto', background:'var(--bg-deep)',
+              border:'1px solid var(--border)', borderRadius:8,
+              padding:16, fontSize:12.5, lineHeight:1.6,
+              color:'var(--text-primary)', whiteSpace:'pre-wrap', wordBreak:'break-word',
+            }}>{viewingSpec.spec}</pre>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,6 @@
 ﻿.env
+.connections_cache.json
+.projects_cache.json
 __pycache__/
 *.pyc
 *.db

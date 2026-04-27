@@ -50,7 +50,7 @@ export default function TemplateStep() {
     dispatch({ type: 'UPDATE_PLACEHOLDERS', payload: [...placeholders, newPh] })
   }
 
-  const confirmed = gates[0]
+  const confirmed = gates[1]
 
   // Summary items for the gate
   const gateItems = [
@@ -61,7 +61,7 @@ export default function TemplateStep() {
   return (
     <div className="pipeline-step">
       <div className="ps-header">
-        <h3>Step 1 — Template Agent</h3>
+        <h3>Step 2 — Template Agent</h3>
         <p>Upload a template file. The AI will parse it and extract all placeholders.</p>
       </div>
 
@@ -154,15 +154,15 @@ export default function TemplateStep() {
         </div>
       )}
 
-      {/* Validation Gate 1 */}
+      {/* Validation Gate 2 */}
       {placeholders.length > 0 && (
         <ValidationGate
-          title="Validation Gate 1 — Confirm Placeholders"
+          title="Validation Gate 2 — Confirm Placeholders"
           summary={`${placeholders.length} placeholder${placeholders.length !== 1 ? 's' : ''} extracted from template.`}
           items={gateItems}
           confirmed={confirmed}
           buttonLabel="Confirm Placeholders"
-          onConfirm={() => dispatch({ type: 'CONFIRM_GATE', payload: 0 })}
+          onConfirm={() => dispatch({ type: 'CONFIRM_GATE', payload: 1 })}
         />
       )}
     </div>
