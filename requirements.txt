@@ -28,3 +28,8 @@ rich>=13.0.0
 
 # PDF parsing
 pdfplumber>=0.10.0
+
+# Vector Store and Embeddings
+chromadb>=0.4.0
+sentence-transformers>=2.2.0
+numpy>=1.24.0

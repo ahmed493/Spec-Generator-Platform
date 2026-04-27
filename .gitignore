@@ -9,3 +9,7 @@ frontend/dist/
 frontend/node_modules/
 spec_generator.db
 *.db
+
+
+*.md
+/data
