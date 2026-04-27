@@ -48,12 +48,24 @@ export const getPowerBIWorkspaceMetadata = (workspaceId) =>
 export const generateSpec = (owner, repoName) =>
   api.post('/generate-spec', { owner, repo_name: repoName })
 
-export const generateSpecFromTemplate = (owner, repoName, templateFile) => {
+export const generateSpecFromTemplate = (repoList, templateFile, pipeline = null) => {
+  // repoList: [{owner, repo_name}, ...]
   const formData = new FormData()
-  formData.append('owner', owner)
-  formData.append('repo_name', repoName)
+  formData.append('repos', JSON.stringify(repoList))
   formData.append('template_file', templateFile)
+  if (pipeline) {
+    formData.append('pipeline', JSON.stringify(pipeline))
+  }
   return axios.post(`${API_BASE}/generate-spec-from-template`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
+export const detectPipelines = (repoList) => {
+  // repoList: [{owner, repo_name}, ...]
+  const formData = new FormData()
+  formData.append('repos', JSON.stringify(repoList))
+  return axios.post(`${API_BASE}/detect-pipelines`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
@@ -78,8 +90,31 @@ export const addProjectSource = (projectId, type, label = '', config = {}) =>
 export const removeProjectSource = (projectId, sourceId) =>
   api.delete(`/projects/${projectId}/sources/${sourceId}`)
 export const getSourceTypes = () => api.get('/source-types')
+export const getProjectApprovedSpecs = (projectId) =>
+  api.get(`/projects/${projectId}/approved-specs`)
 
 // ================= PIPELINE (step-by-step) =================
+export const pipelineDetectPipelines = (projectId) =>
+  api.post(`/projects/${projectId}/pipeline/detect-pipelines`, null, { timeout: 180000 })
+export const pipelineSelect = (projectId, pipelineId) =>
+  api.post(`/projects/${projectId}/pipeline/select`, { pipeline_id: pipelineId })
+export const pipelineUpdatePipelines = (projectId, pipelines) =>
+  api.post(`/projects/${projectId}/pipeline/update-pipelines`, { pipelines })
+export const pipelineSplit = (projectId, pipelineId, splitName1, splitName2) =>
+  api.post(`/projects/${projectId}/pipeline/split`, {
+    pipeline_id: pipelineId,
+    split_name_1: splitName1,
+    split_name_2: splitName2,
+  })
+export const pipelineMerge = (projectId, pipelineIds, mergedName) =>
+  api.post(`/projects/${projectId}/pipeline/merge`, {
+    pipeline_ids: pipelineIds,
+    merged_name: mergedName,
+  })
+export const pipelineReorder = (projectId, pipelineIds) =>
+  api.post(`/projects/${projectId}/pipeline/reorder`, { pipeline_ids: pipelineIds })
+export const pipelineResetPipelines = (projectId) =>
+  api.post(`/projects/${projectId}/pipeline/reset-pipelines`)
 export const pipelineTemplate = (projectId, templateFile) => {
   const formData = new FormData()
   formData.append('template_file', templateFile)
@@ -95,6 +130,15 @@ export const pipelineExport = (projectId, format = 'markdown') =>
   api.post(`/projects/${projectId}/pipeline/export`, { format })
 export const pipelineGetState = (projectId) =>
   api.get(`/projects/${projectId}/pipeline/state`)
+export const pipelineGetSpecVersions = (projectId) =>
+  api.get(`/projects/${projectId}/pipeline/spec-versions`)
+export const pipelineDiffSpecVersions = (projectId, fromVersionId, toVersionId) =>
+  api.post(`/projects/${projectId}/pipeline/spec-versions/diff`, {
+    from_version_id: fromVersionId,
+    to_version_id: toVersionId,
+  })
+export const pipelinePromoteSpecVersion = (projectId, versionId) =>
+  api.post(`/projects/${projectId}/pipeline/spec-versions/${versionId}/promote`)
 
 // ================= PROJECT CHAT =================
 export const projectChat = (projectId, question, pipelineStep = '', placeholders = [], extractedValues = {}) =>

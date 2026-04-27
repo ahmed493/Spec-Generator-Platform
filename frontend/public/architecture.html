@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spec Generator — Architecture</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    /* ─── Reset & base ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:       #060d1f;
+      --navy-2:     #0b1630;
+      --navy-3:     #111e3e;
+      --border:     rgba(255,255,255,0.07);
+      --text:       #e8edf8;
+      --muted:      #7a8bb0;
+      --g-yellow:   #FFD43B;
+      --g-orange:   #FF7A3C;
+      --g-pink:     #FF3CAC;
+      --grad: linear-gradient(135deg, var(--g-yellow) 0%, var(--g-orange) 45%, var(--g-pink) 100%);
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--navy);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* ─── Subtle grid bg ───────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(255,122,60,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,122,60,.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ─── Layout ───────────────────────────────────────────── */
+    .page {
+      position: relative; z-index: 1;
+      min-height: 100vh;
+      display: flex; flex-direction: column;
+      padding: 40px 48px 60px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    /* ─── Header ───────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 48px;
+    }
+
+    .header-left { display: flex; flex-direction: column; gap: 6px; }
+
+    .eyebrow {
+      font-family: 'Syne', sans-serif;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    h1 {
+      font-family: 'Syne', sans-serif;
+      font-size: clamp(26px, 3vw, 42px);
+      font-weight: 800;
+      line-height: 1.1;
+      color: var(--text);
+    }
+
+    h1 span {
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      margin-top: 8px;
+      font-size: 14px;
+      color: var(--muted);
+      max-width: 520px;
+      line-height: 1.6;
+    }
+
+    /* ─── Logo top-right ───────────────────────────────────── */
+    .brand-logo {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .brand-logo img {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      box-shadow: 0 0 0 2px rgba(255,122,60,.3), 0 8px 32px rgba(255,60,172,.25);
+      transition: transform .3s ease, box-shadow .3s ease;
+    }
+
+    .brand-logo img:hover {
+      transform: scale(1.06);
+      box-shadow: 0 0 0 3px rgba(255,122,60,.5), 0 12px 40px rgba(255,60,172,.4);
+    }
+
+    .brand-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    /* ─── Legend ───────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 24px;
+      margin-bottom: 32px;
+      padding: 16px 24px;
+      background: var(--navy-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      width: fit-content;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .legend-dot {
+      width: 12px; height: 12px;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+
+    /* ─── Diagram card ─────────────────────────────────────── */
+    .diagram-card {
+      background: var(--navy-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 40px;
+      flex: 1;
+      overflow: auto;
+      position: relative;
+    }
+
+    .diagram-card::before {
+      content: '';
+      position: absolute;
+      inset: 0; border-radius: 20px;
+      background: linear-gradient(135deg,
+        rgba(255,212,59,.03) 0%,
+        rgba(255,122,60,.02) 50%,
+        rgba(255,60,172,.03) 100%);
+      pointer-events: none;
+    }
+
+    /* Mermaid override for dark theme */
+    .mermaid { display: flex; justify-content: center; }
+
+    .mermaid svg {
+      max-width: 100%;
+      height: auto;
+      font-family: 'Inter', sans-serif !important;
+    }
+
+    /* ─── Footer ───────────────────────────────────────────── */
+    footer {
+      margin-top: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .footer-line {
+      width: 120px; height: 1px;
+      background: var(--grad);
+      opacity: .4;
+    }
+
+    /* ─── Scrollbar ────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--navy); }
+    ::-webkit-scrollbar-thumb { background: rgba(255,122,60,.3); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header>
+    <div class="header-left">
+      <span class="eyebrow">Architecture Technique — v1.0</span>
+      <h1>Spec Generator <span>Platform</span></h1>
+      <p class="subtitle">
+        Multi-agent LLM pipeline — template ingestion, metadata extraction,
+        spec composition &amp; validation — served via FastAPI + React.
+      </p>
+    </div>
+
+    <!-- JEMS Logo top-right -->
+    <div class="brand-logo">
+      <img src="./jems-logo.svg" alt="JEMS Logo" />
+      <span class="brand-name">JEMS</span>
+    </div>
+  </header>
+
+  <!-- ── Legend ─────────────────────────────────────────────── -->
+  <div class="legend">
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#1a2f5a;border:1px solid #FFD43B;"></div>
+      Frontend
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#0f2b3d;border:1px solid #FF7A3C;"></div>
+      Backend API
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#0e3535;border:1px solid #FF3CAC;"></div>
+      Agent Pipeline
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#2a1a10;border:1px solid #FF7A3C;"></div>
+      LLM / AI
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#1d1a08;border:1px solid #FFD43B;"></div>
+      Integrations
+    </div>
+    <div class="legend-item">
+      <div class="legend-dot" style="background:#1a1a2e;border:1px solid rgba(255,255,255,0.2);"></div>
+      Storage / Workers
+    </div>
+  </div>
+
+  <!-- ── Diagram ─────────────────────────────────────────────── -->
+  <div class="diagram-card">
+    <div class="mermaid">
+%%{init: {
+  "theme": "base",
+  "themeVariables": {
+    "primaryColor":       "#0e3535",
+    "primaryTextColor":   "#ffffff",
+    "primaryBorderColor": "#FF3CAC",
+    "lineColor":          "#FF7A3C",
+    "secondaryColor":     "#1a2f5a",
+    "tertiaryColor":      "#0f2b3d",
+    "background":         "#0b1630",
+    "mainBkg":            "#0e3535",
+    "nodeBorder":         "#FF3CAC",
+    "clusterBkg":         "#0d1e38",
+    "clusterBorder":      "rgba(255,122,60,0.3)",
+    "titleColor":         "#FFD43B",
+    "edgeLabelBackground":"#111e3e",
+    "fontFamily":         "Inter, sans-serif",
+    "fontSize":           "13px"
+  }
+}}%%
+flowchart TB
+
+  %% ── Class definitions (JEMS palette) ─────────────────────
+  classDef frontend   fill:#1a2f5a,stroke:#FFD43B,color:#ffffff,stroke-width:1.5px;
+  classDef api        fill:#0f2b3d,stroke:#FF7A3C,color:#ffffff,stroke-width:1.5px;
+  classDef agent      fill:#0e3535,stroke:#FF3CAC,color:#ffffff,stroke-width:1.5px;
+  classDef orch       fill:#2a0d2e,stroke:#FF3CAC,color:#ffffff,stroke-width:2px;
+  classDef llm        fill:#2a1a10,stroke:#FF7A3C,color:#ffffff,stroke-width:2px;
+  classDef parser     fill:#1a3020,stroke:#FFD43B,color:#e8edf8,stroke-width:1.5px;
+  classDef storage    fill:#1a1a2e,stroke:#9b8af4,color:#e8edf8,stroke-width:1.5px;
+  classDef integ      fill:#1d1a08,stroke:#FFD43B,color:#e8edf8,stroke-width:1.5px;
+
+  %% ── User ──────────────────────────────────────────────────
+  Browser(["🌐 Browser\nReact SPA"])
+
+  %% ── Frontend ──────────────────────────────────────────────
+  subgraph FE["  Frontend  (React + Vite)  "]
+    direction TB
+    UI["📄 Pages\nConnections · Explorer · SpecPage"]
+    API_JS["🔌 api.js\nHTTP + FormData client"]
+  end
+
+  %% ── Backend ───────────────────────────────────────────────
+  subgraph BE["  Backend  (FastAPI · Uvicorn)  "]
+    direction TB
+    Routes["🛣️ Routes\n/api/generate-spec-from-template\n/api/connections · /api/repos"]
+  end
+
+  %% ── Agent Pipeline ────────────────────────────────────────
+  subgraph PIPE["  Agent Pipeline  "]
+    direction TB
+    Orch["🎛️ Orchestrator Agent\nWorkflow · retries · logs"]
+    Template["📑 Template Agent\nPDF / MD reader\n→ LLM field detection"]
+    Extraction["🔍 Extraction Agent\nRepo metadata → field values"]
+    Mapping["🗺️ Mapping Agent\nTemplate + values → Markdown spec"]
+    Validation["✅ Validation Agent\nRequired fields · warnings · report"]
+  end
+
+  %% ── Workers & Storage ─────────────────────────────────────
+  subgraph TOOLS["  Workers & Storage  "]
+    direction LR
+    PDFParse["📄 pdfplumber\nPDF parser"]
+    SpecDB[("💾 Spec Store\nMarkdown · DB · S3")]
+  end
+
+  %% ── LLM ───────────────────────────────────────────────────
+  LLM(["🤖 OpenAI GPT-4o\nLLM provider"])
+
+  %% ── External Integrations ─────────────────────────────────
+  subgraph EXT["  External Integrations  "]
+    direction LR
+    GH["🐙 GitHub\nRepo files · metadata"]
+    GCS["☁️ GCS\nCloud Storage"]
+    BQ["📊 BigQuery"]
+    PG["🐘 PostgreSQL\nApp DB"]
+    PB["📈 PowerBI\nBI export"]
+  end
+
+  %% ── Edges ─────────────────────────────────────────────────
+  Browser --> UI
+  UI --> API_JS
+  API_JS -->|"multipart/form-data"| Routes
+
+  Routes --> Orch
+
+  Orch --> Template
+  Orch --> Extraction
+  Orch --> Mapping
+  Orch --> Validation
+
+  Template --> PDFParse
+  Template -->|"detect fields"| LLM
+
+  Extraction -->|"field values"| LLM
+  Extraction --> GH
+  Extraction --> GCS
+  Extraction --> BQ
+  Extraction --> PG
+
+  Mapping -->|"compose spec"| LLM
+  Mapping --> SpecDB
+
+  Validation -->|"validate"| LLM
+  Validation --> SpecDB
+
+  SpecDB -->|"spec Markdown"| Routes
+
+  %% ── Class assignments ─────────────────────────────────────
+  class Browser,UI,API_JS frontend;
+  class Routes api;
+  class Orch orch;
+  class Template,Extraction,Mapping,Validation agent;
+  class PDFParse parser;
+  class SpecDB storage;
+  class LLM llm;
+  class GH,GCS,BQ,PG,PB integ;
+    </div>
+  </div>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <footer>
+    <span>Spec Generator Platform · Architecture v1.0</span>
+    <div class="footer-line"></div>
+    <span>JEMS &copy; 2026</span>
+  </footer>
+
+</div>
+
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    flowchart: { curve: 'basis', padding: 20, nodeSpacing: 50, rankSpacing: 60 },
+    securityLevel: 'loose',
+  });
+</script>
+</body>
+</html>

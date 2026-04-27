@@ -12,7 +12,7 @@ export default function MappingStep() {
   const [editableSpec, setEditableSpec] = useState(spec)
   const [hoveredPlaceholder, setHoveredPlaceholder] = useState(null)
 
-  const confirmed = gates[2]
+  const confirmed = gates[3]
 
   useEffect(() => {
     if (!spec && !loading && Object.keys(confirmedValues).length > 0) {
@@ -30,7 +30,14 @@ export default function MappingStep() {
     setError(null)
     try {
       const res = await pipelineMap(project.id, confirmedValues)
-      dispatch({ type: 'SET_SPEC', payload: { spec: res.data.spec, validation: res.data.validation } })
+      dispatch({
+        type: 'SET_SPEC',
+        payload: {
+          spec: res.data.spec,
+          validation: res.data.validation,
+          version: res.data.version || null,
+        },
+      })
     } catch (err) {
       setError(err.response?.data?.detail || 'Mapping failed.')
     }
@@ -39,7 +46,7 @@ export default function MappingStep() {
 
   const handleConfirm = () => {
     dispatch({ type: 'SET_SPEC', payload: { spec: editableSpec, validation } })
-    dispatch({ type: 'CONFIRM_GATE', payload: 2 })
+    dispatch({ type: 'CONFIRM_GATE', payload: 3 })
   }
 
   const gapCount = Object.values(confirmedValues).filter(
@@ -58,7 +65,7 @@ export default function MappingStep() {
   return (
     <div className="pipeline-step">
       <div className="ps-header">
-        <h3>Step 3 — Mapping Agent</h3>
+        <h3>Step 4 — Mapping Agent</h3>
         <p>Values are mapped into the template. Review and edit the live preview below.</p>
       </div>
 
@@ -112,7 +119,7 @@ export default function MappingStep() {
 
       {!loading && editableSpec && (
         <ValidationGate
-          title="Validation Gate 3 — Approve Spec"
+          title="Validation Gate 4 — Approve Spec"
           summary={validation?.is_valid
             ? 'All required fields are filled. The specification is ready.'
             : `Validation report: ${validation?.report || 'No report'}`}

@@ -1,6 +1,6 @@
 import { CheckCircle, Lock } from 'lucide-react'
 
-export default function ValidationGate({ title, summary, items, onConfirm, confirmed, buttonLabel = 'Confirm & Continue' }) {
+export default function ValidationGate({ title, summary, items, onConfirm, confirmed, buttonLabel = 'Confirm & Continue', disabled = false }) {
   return (
     <div className={`validation-gate ${confirmed ? 'confirmed' : ''}`}>
       <div className="vg-frost" />
@@ -20,7 +20,7 @@ export default function ValidationGate({ title, summary, items, onConfirm, confi
           </ul>
         )}
         {!confirmed && (
-          <button className="btn btn-primary vg-btn" onClick={onConfirm}>
+          <button className="btn btn-primary vg-btn" onClick={onConfirm} disabled={disabled}>
             <CheckCircle size={14} />
             {buttonLabel}
           </button>

@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
+    # LLM
+    llm_provider: str = "openai"
+
     # GitHub
     github_token: str = ""
 
