@@ -22,28 +22,44 @@ from app.agents.llm_client import get_llm_client, BaseLLMClient
 
 logger = logging.getLogger(__name__)
 
+# Semantic queries used to retrieve pipeline-relevant code chunks from ChromaDB.
+# Each query targets a different pipeline pattern so the retrieval covers the full
+# spectrum (batch jobs, event consumers, schedulers, ETL flows, etc.).
+PIPELINE_SEMANTIC_QUERIES = [
+    "console command batch job data pipeline ETL processor",
+    "message consumer handler queue listener subscriber",
+    "scheduler cron job periodic task scheduled",
+    "data flow extract transform load pipeline processor writer",
+    "event listener webhook handler dispatcher",
+    "kafka rabbitmq sqs pubsub redis stream consumer producer",
+    "airflow prefect celery luigi dag task worker",
+    "symfony messenger command consumer producer handler",
+    "spring batch job step reader writer listener scheduled",
+]
+
 
 DETECTION_SYSTEM_PROMPT = """You are a senior data engineering architect and reverse-engineering expert.
-You deeply analyse repository code, DAG files, YAML configs, SQL scripts, Python scripts, PHP code,
-Java/Spring classes, JavaScript/TypeScript files, shell scripts, docker-compose files, and connected
-data-source schemas to detect EVERY distinct data pipeline, flux, module, job, or data flow in the project.
+You perform EXHAUSTIVE codebase analysis — you DO NOT stop at a summary; you enumerate EVERY
+data pipeline, flux, job, handler, consumer, producer, scheduler, ETL script, and processing
+unit found in the repository code and connected data sources.
 
-Rules:
-- Be GRANULAR. Do NOT group unrelated jobs into one pipeline.
-- Detect individual jobs, queue listeners, scheduled tasks, console commands, batch processors,
-  event handlers, webhook handlers, event consumers, cron scripts — each is potentially its own pipeline.
-- Prioritise application/data pipelines implemented in source code (PHP/Python/Java/TS).
-  CI/CD files are secondary context and should not dominate the result.
-- Be language-agnostic: this applies to any stack/framework, not only listed examples.
-- Recognise pipelines in ANY technology stack:
-    * Python: Airflow DAGs, Prefect flows, Celery tasks, Luigi pipelines, scripts
-    * PHP/Symfony: Console Commands (Command classes), Messenger handlers/consumers, event
-      subscribers/listeners, cron-triggered services, Doctrine migrations that load data
-    * Java/Spring: @Scheduled methods, Spring Batch jobs (Job/Step/ItemReader/Writer), JMS/AMQP
-      message listeners, @EventListener classes
-    * Node/TS: Bull/BullMQ workers, Agenda jobs, NestJS @Cron, EventEmitter listeners
-    * Shell/Makefile: cron jobs, ETL shell scripts, data load scripts
-    * Any service that reads from one place and writes to another IS a pipeline.
+Critical rules:
+- NEVER merge separate pipelines/jobs/commands into one entry. Each file, class, method, or command
+  that independently reads data → processes → writes/sends is its own pipeline entry.
+- If a project has 40 PHP console commands, return 40 entries. If there are 15 Kafka consumers,
+  return 15 entries. There is NO upper limit on the number of pipelines you can return.
+- Detect pipelines in EVERY language and framework: PHP/Symfony, Python, Java/Spring, Node/TS,
+  Go, .NET, Ruby, Rust, Shell, SQL stored procedures, Makefile ETL targets — ALL of them.
+- Group each pipeline under a business domain `category` (e.g. accounting, crm, reporting,
+  grd, lp2, haulogy, sponsorship, delco, energy, sync, auth, notification, other).
+  Infer the category from folder names, class names, config keys, and table names.
+- execution_mode MUST be inferred correctly:
+    * Anything with a queue/topic consumer or event listener → "event_driven"
+    * Anything with a cron/schedule → "scheduled"
+    * Anything triggered by an API call or webhook → "trigger_based"
+    * Anything run once on demand / CLI → "on_demand"
+    * Continuous streaming pipeline → "streaming"
+    * Default only to "batch" when NO other signal is present.
 - Always respond with VALID JSON ONLY, no extra text, no markdown fences."""
 
 
@@ -52,105 +68,119 @@ DETECTION_PROMPT = """Analyse the following project metadata extracted from one 
 ## Project metadata:
 {metadata_summary}
 
-## Your Task:
-Detect ALL distinct data pipelines / flux / modules / jobs in this project.
-Be as GRANULAR as possible — do not merge unrelated jobs or flows into one pipeline.
-A "pipeline" is ANY process that: reads data from somewhere → does something → writes/sends somewhere.
+## YOUR TASK — EXHAUSTIVE PIPELINE INVENTORY
+Produce a COMPLETE inventory of EVERY pipeline, job, flux, handler, consumer, and processing
+unit found in this project. Do NOT summarise, do NOT merge, do NOT stop early.
+A "pipeline" is ANY process that: reads data from somewhere → does something → writes/sends it somewhere.
 
-## What to look for in ANY tech stack:
-0. **Any language / framework**
-  - Treat business/runtime data flows as first-class pipelines regardless of language
-  - Examples: Go workers, .NET hosted services, Rust consumers, Ruby Sidekiq jobs,
-    Scala Spark jobs, Elixir consumers, C# Hangfire jobs, etc.
-1. **Jobs / Processing units**
-   - Python: Airflow DAG tasks, Prefect flows, Celery tasks, standalone scripts, Luigi tasks
-   - PHP/Symfony: Console Command classes (extends Command), Symfony Messenger message handlers,
-     event subscribers (EventSubscriberInterface), services called from cron
-   - Java/Spring: @Scheduled methods, Spring Batch Job/Step, @JmsListener, @RabbitListener,
-     @EventListener, CommandLineRunner, ApplicationRunner
-   - Node/TS: Bull/BullMQ process() workers, Agenda.define() jobs, @Cron decorators
-   - SQL: stored procedures, views that aggregate, migration scripts that transform data
-   - Shell: bash scripts loading/transforming files, Makefile ETL targets
-2. **Triggers** — cron schedules (crontab, @Scheduled, Airflow schedule_interval), event triggers,
-   API calls, sensors, manual execution, CI/CD hooks, file arrival
-3. **Listen mode** — Symfony Messenger consumers, Kafka consumers, SQS pollers, RabbitMQ consumers,
-   Spring @JmsListener, webhook receivers, CDC (Debezium), socket listeners
-4. **Queues / Streams / Topics** — Kafka, RabbitMQ, SQS/SNS, Pub/Sub, Redis Streams, Symfony Messenger
-   transports (AMQP, Doctrine, Redis), Celery queues
-5. **Sub-pipelines** — pipelines launched by another pipeline (child DAGs, dispatched messages,
-   chained jobs, commands calling other commands)
-6. **Launchers** — Airflow, Prefect, cron, Symfony Scheduler, @Scheduled, GitHub Actions, Jenkins
-7. **Execution mode** — scheduled batch, real-time streaming, event-driven, on-demand, cron
-8. **Data flow** — source (DB table / API / file / queue) → transformation → destination
+  MANDATORY RULES:
+1. **One entry per executable unit** — each file, class, method, console command, queue consumer,
+   scheduled task, event handler, or ETL script that independently processes data gets its OWN entry.
+2. **No upper limit** — if the project has 50 commands and 20 consumers, return 70 entries.
+3. **No CI/CD entries** — skip build/test/lint/deploy stages unless they perform real data processing
+   (ETL export, DB migration with data load, report generation, data sync).
+4. **Category is mandatory** — classify every pipeline under a business domain using folder names,
+   class names, config keys, and table names as evidence.
+5. **execution_mode is inferred, never defaulted**:
+   - queue/topic consumer or event listener → "event_driven"
+   - cron / @Scheduled / schedule_interval → "scheduled"
+   - triggered by API call / webhook → "trigger_based"
+   - CLI on-demand / manual run → "on_demand"
+   - continuous stream processing → "streaming"
+   - **only use "batch" when a pipeline explicitly processes data in bulk with no other signal**
 
-## Important priority rule:
-- Prefer pipelines discovered in runtime application code (services, workers, handlers, schedulers,
-  ETL jobs, SQL transforms) over CI/CD pipeline definitions.
-- Do NOT output generic CI/CD stages (build/test/lint/deploy) as primary pipelines unless they clearly
-  perform real business/data processing tasks (for example ETL export/import, DB migration with data load,
-  report generation, or data sync jobs).
-- If both code pipelines and CI/CD pipelines exist, return code pipelines first and keep CI/CD entries minimal.
+## WHAT TO DETECT IN EVERY STACK
+### Jobs & Processing units
+- Python: Airflow DAG tasks, Prefect flows, Celery tasks, Luigi tasks, standalone scripts
+- PHP/Symfony: ALL classes extending `Command` or `ContainerAwareCommand`, ALL Messenger handlers,
+  ALL EventSubscriberInterface implementations, ALL services called by cron
+- Java/Spring: ALL @Scheduled methods (one per method), ALL Spring Batch Job beans, ALL @JmsListener
+  / @RabbitListener / @KafkaListener / @EventListener methods
+- Node/TS: ALL Bull/BullMQ workers, ALL Agenda.define() jobs, ALL @Cron decorated methods
+- SQL: stored procedures, views performing aggregation/transformation, migration scripts loading data
+- Shell: bash/sh files loading, transforming, or exporting data, Makefile ETL targets
 
-## Output rules:
-- Each pipeline / job / command / handler MUST have its own entry — do not combine.
-- If a Symfony application has 6 Console Commands that each process different data, that is 6 pipelines.
-- If a Spring app has 4 @Scheduled methods + 2 @RabbitListener handlers, that is 6 pipelines.
-- Use evidence from actual class names, method names, file paths, config keys found in the code.
+### Triggers
+cron schedules, @Scheduled, Airflow schedule_interval, event triggers, API calls, file arrival,
+queue messages, sensors, manual CLI, CI/CD hooks
 
-Respond ONLY with this exact JSON:
+### Listen mode (async consumers)
+Symfony Messenger consumers, Kafka consumers, SQS pollers, RabbitMQ consumers,
+Spring @JmsListener / @RabbitListener, webhook receivers, CDC (Debezium), socket listeners
+
+### Queues / Streams / Topics
+Kafka, RabbitMQ, SQS/SNS, Pub/Sub, Redis Streams, Celery queues,
+Symfony Messenger transports (AMQP, Doctrine, Redis)
+
+### Data flow
+source (DB table / API / file / queue / FTP) → transformations → destination
+
+## BUSINESS CATEGORY CLASSIFICATION
+Assign each pipeline to one of these categories based on code evidence:
+accounting, crm, reporting, grd, lp2, haulogy, sponsorship, delco, energy,
+sync, auth, notification, ml, api, etl, monitoring, other
+
+Respond ONLY with this exact JSON (no markdown fences, no narrative):
 {{
   "pipelines": [
     {{
-      "id": "snake_case_id",
-      "name": "Human-readable pipeline name",
-      "description": "What this pipeline does — 2-4 concrete sentences referencing actual code/tables found.",
+      "id": "snake_case_unique_id",
+      "name": "Human-readable name",
+      "description": "2-4 sentences referencing actual class names, file paths, table names found.",
       "type": "batch|streaming|api|ml|reporting|etl|event_driven|cdc|other",
-      "execution_mode": "scheduled|streaming|event_driven|trigger_based|on_demand|manual",
+      "execution_mode": "scheduled|streaming|event_driven|trigger_based|on_demand|batch",
+      "category": "accounting|crm|reporting|grd|lp2|haulogy|sponsorship|delco|energy|sync|auth|notification|ml|api|etl|monitoring|other",
       "confidence": 0.0,
       "launcher": "Airflow|Prefect|cron|API|GitHub Actions|manual|parent_pipeline_id|unknown",
       "triggers": [
-        {{"type": "cron|event|api_call|sensor|queue_message|file_arrival|manual|webhook", "detail": "0 2 * * * (daily at 2am)"}}
+        {{"type": "cron|event|api_call|sensor|queue_message|file_arrival|manual|webhook", "detail": "exact cron expression or event name"}}
       ],
       "listen_mode": [
-        {{"type": "kafka_consumer|sqs_listener|pubsub_subscription|rabbitmq_consumer|webhook|cdc|none", "detail": "topic: orders.created, group: order_processor"}}
+        {{"type": "kafka_consumer|sqs_listener|pubsub_subscription|rabbitmq_consumer|webhook|cdc|none", "detail": "queue/topic name and routing key"}}
       ],
       "queues": [
-        {{"name": "topic_or_queue_name", "technology": "Kafka|SQS|RabbitMQ|PubSub|Redis|Azure SB|other", "role": "input|output|both"}}
+        {{"name": "exact_queue_or_topic_name", "technology": "Kafka|SQS|RabbitMQ|PubSub|Redis|Azure SB|other", "role": "input|output|both"}}
       ],
       "jobs": [
-        {{"id": "job_snake_id", "name": "Job name", "file": "path/to/file.py", "description": "What this job does", "order": 1}}
+        {{"id": "job_id", "name": "Job name", "file": "path/to/file", "description": "what this job does", "order": 1}}
       ],
-      "sub_pipelines": ["child_pipeline_id_1", "child_pipeline_id_2"],
+      "sub_pipelines": [],
       "parent_pipeline": null,
       "explainability": {{
-        "keywords": ["keyword"],
-        "orchestration_clues": ["airflow dag", "cron"],
-        "evidence_files": ["dags/ingest_orders.py"],
-        "evidence_tables": ["raw.orders"]
+        "keywords": ["class or method name"],
+        "orchestration_clues": ["evidence of how it is triggered"],
+        "evidence_files": ["exact/file/path.php"],
+        "evidence_tables": ["schema.table_name"]
       }},
-      "source_files": ["path/to/file.py"],
+      "source_files": ["exact/file/path"],
       "source_tables": ["schema.table"],
-      "technologies": ["Python", "Airflow", "Kafka", "BigQuery"]
+      "technologies": ["PHP", "RabbitMQ", "MySQL"]
     }}
   ],
   "count": 0,
-  "summary": "One or two sentences describing the overall project data architecture."
+  "summary": "One paragraph describing the overall data architecture and number of pipelines/consumers/commands found."
 }}
 """
 
 
-SYMFONY_FLUX_SYSTEM_PROMPT = """You are a codebase analysis agent specialized in detecting all data flows,
-integration pipelines, and processing flux in a Symfony PHP project.
+SYMFONY_FLUX_SYSTEM_PROMPT = """You are a codebase analysis agent specialized in EXHAUSTIVE detection
+of all data flows, integration pipelines, and processing flux in a Symfony PHP project.
 
-Your task is to scan the entire codebase and produce a structured inventory of every flux/pipeline found.
-A flux is any mechanism that moves, transforms, triggers, or reacts to data, synchronously or asynchronously.
+Your task is to produce a COMPLETE structured inventory of EVERY flux/pipeline — no omissions.
+A flux is any mechanism that moves, transforms, triggers, or reacts to data, sync or async.
 
-Requirements:
-- Start from configuration and runtime evidence, not assumptions.
-- Prefer verifiable code and config evidence over README descriptions.
-- Detect commands, consumers, producers, listeners, subscribers, workflows, REST clients,
-    file integrations, scheduled jobs, and inbound API endpoints.
-- Do not skip bundles or config imports.
+Critical requirements:
+- Return ONE entry per Console Command class, per consumer, per producer, per event listener.
+  If a project has 45 Command classes, return 45 entries. There is NO upper limit.
+- execution_mode MUST reflect actual behavior:
+    * RabbitMQ / Messenger consumer → "event_driven"
+    * @Scheduled / cron command → "scheduled"
+    * API/webhook handler → "trigger_based"
+    * CLI command run on demand → "on_demand"
+    * NEVER default to "batch" unless the pipeline genuinely bulk-processes records.
+- Assign a business `category` to every entry using folder paths, class names, config keys.
+- Start from configuration files (config_rabbitmq.yml, services.yml, routing.yml) as source of truth.
+- Do not skip any bundle, sub-config import, or annotated class.
 - Always respond with VALID JSON ONLY, no markdown fences, no commentary.
 """
 
@@ -248,32 +278,35 @@ Use these to fill the category field when evidence matches:
 - Do NOT invent flux; only report what is verifiable in the code or config
 
 ## OUTPUT FORMAT
-Return either:
-1. a JSON array of flux entries, OR
-2. a JSON object with a `pipelines` array.
+Return a JSON object with a `pipelines` array. One entry per flux unit — no merging.
 
-Each entry should use this structure when possible:
+Each entry MUST use this exact structure:
 {{
-    "id": "unique-slug",
-    "name": "Human-readable name",
-    "category": "accounting|crm|grd|lp2|reporting|haulogy|sponsorship|delco|energy|frontend|other",
-    "type": "command|consumer|producer|listener|workflow|rest-client|file-import|file-export|api-endpoint|cron|other",
+    "id": "unique-slug-derived-from-class-or-file-name",
+    "name": "Human-readable name (include class name or command name)",
+    "category": "accounting|crm|grd|lp2|reporting|haulogy|sponsorship|delco|energy|sync|auth|notification|etl|other",
+    "type": "command|consumer|producer|listener|workflow|rest-client|file-import|file-export|api-endpoint|cron|batch|other",
+    "execution_mode": "scheduled|streaming|event_driven|trigger_based|on_demand|batch",
     "trigger": "cli|rabbitmq|http|cron|event|ftp|doctrine|manual",
     "direction": "inbound|outbound|internal",
-    "source": "originating system or service",
-    "destination": "target system or service",
+    "source": "originating system or service name",
+    "destination": "target system or service name",
     "class": "Fully\\Qualified\\ClassName",
-    "config_key": "rabbitmq config key or route name if applicable",
-    "queue_or_route": "queue name, exchange, routing key, or URL path if applicable",
-    "description": "One sentence: what data moves, from where to where, and why",
+    "config_key": "rabbitmq config key or route name (exact string from config file)",
+    "queue_or_route": "exact queue name, exchange, routing key, or URL path",
+    "description": "One sentence: what data moves, from where (exact source) to where (exact destination)",
+    "confidence": 0.85,
     "dependencies": ["OtherClass", "ExternalSystem"],
     "jobs": [],
     "listen_mode": [],
     "queues": [],
     "triggers": [],
-    "source_files": [],
-    "technologies": []
+    "source_files": ["src/path/to/File.php"],
+    "source_tables": [],
+    "technologies": ["PHP", "Symfony", "RabbitMQ"]
 }}
+
+⚠️  Return ALL entries. If 60 flux units are found, return 60 entries.
 """
 
 
@@ -306,8 +339,13 @@ class PipelineDetectionAgent:
         system_prompt = SYMFONY_FLUX_SYSTEM_PROMPT if use_symfony_prompt else DETECTION_SYSTEM_PROMPT
         prompt = prompt_template.format(metadata_summary=summary)
         logger.info("PipelineDetectionAgent prompt mode: %s", "symfony-flux" if use_symfony_prompt else "generic")
-        raw = self.llm.generate(prompt, system_prompt=system_prompt)
-        logger.info("LLM raw response (first 800 chars): %s", raw[:800])
+        raw = self.llm.generate(
+            prompt,
+            system_prompt=system_prompt,
+            response_format={"type": "json_object"},
+            max_tokens=8192,
+        )
+        logger.info("LLM raw response (%d chars, first 800): %s", len(raw or ""), (raw or "")[:800])
         parsed = self._parse(raw)
 
         # Deterministic runtime extraction (jobs/listeners/queues/schedulers)
@@ -462,12 +500,12 @@ class PipelineDetectionAgent:
             has_listener = bool(listener_re.search(content) or listener_re.search(path))
             has_job = bool(job_re.search(content) or job_re.search(path))
 
-            # Require at least one strong executable/runtime signal; queue text alone is not enough.
-            if not (has_job or has_schedule or has_listener):
+            # Require at least one executable/runtime signal.
+            if not (has_job or has_schedule or has_listener or queue_hits):
                 continue
 
             signal_score = int(has_job) + int(has_schedule) + int(has_listener) + (1 if queue_hits else 0)
-            if signal_score < 2:
+            if signal_score < 1:
                 continue
 
             stem = re.sub(r"[^a-z0-9]+", "_", path_lower).strip("_")[-80:] or "pipeline"
@@ -554,26 +592,176 @@ class PipelineDetectionAgent:
 
         return merged
 
-    def _parse(self, raw: str) -> dict:
-        raw = raw.strip()
-        # Strip markdown code fences
-        raw = re.sub(r"^```[a-z]*\n?", "", raw)
-        raw = re.sub(r"\n?```$", "", raw)
-        raw = raw.strip()
-        try:
-            data = json.loads(raw)
-            if isinstance(data, list):
-                pipelines = data
-                summary = ""
+    # ── Vectorstore-augmented detection ─────────────────────────────────────
+
+    def detect_with_vectorstore(
+        self, repo_metadata: dict, project_id: str, vector_manager
+    ) -> dict:
+        """
+        Like detect() but first chunks & stores all repo files into ChromaDB,
+        then uses semantic retrieval to prioritise the most pipeline-relevant
+        code before building the LLM prompt.  Falls back to plain detect() if
+        the vectorstore is unavailable or empty.
+        """
+        repo_name = repo_metadata.get("repo_name", "unknown")
+
+        # Flatten all code files from the metadata dict
+        all_files: list[dict] = []
+        for key in ("sql_files", "python_files", "yaml_files", "json_files",
+                    "notebook_files", "code_files"):
+            for f in (repo_metadata.get(key) or []):
+                if f.get("content") and f.get("path"):
+                    ext = f["path"].rsplit(".", 1)[-1].lower() if "." in f["path"] else "txt"
+                    all_files.append({"content": f["content"], "path": f["path"], "type": ext})
+
+        # Try to retrieve pipeline-relevant chunks from what is already stored
+        retrieved = self._query_vectorstore_for_pipelines(vector_manager, project_id)
+
+        # If nothing is stored yet, index the fetched files and retry
+        if not retrieved and all_files:
+            try:
+                logger.info(
+                    "PipelineDetectionAgent: no content in vectorstore for project %s "
+                    "— indexing %d files",
+                    project_id, len(all_files),
+                )
+                vector_manager.add_multiple_repository_files(all_files, project_id, repo_name)
+                retrieved = self._query_vectorstore_for_pipelines(vector_manager, project_id)
+            except Exception as exc:
+                logger.warning("PipelineDetectionAgent: vectorstore index/search failed: %s", exc)
+
+        if retrieved:
+            augmented = self._augment_metadata_with_retrieved_chunks(
+                repo_metadata, all_files, retrieved
+            )
+            logger.info(
+                "PipelineDetectionAgent: vectorstore augmentation — %d unique chunks "
+                "retrieved, context prioritised before LLM call",
+                len(retrieved),
+            )
+            return self.detect(augmented)
+
+        # Fallback: vectorstore unavailable or returned nothing
+        logger.info("PipelineDetectionAgent: vectorstore unavailable, falling back to plain detect()")
+        return self.detect(repo_metadata)
+
+    def _query_vectorstore_for_pipelines(
+        self, vector_manager, project_id: str
+    ) -> list[dict]:
+        """
+        Run all PIPELINE_SEMANTIC_QUERIES against the vectorstore and return
+        deduplicated chunk hits ordered by query relevance.
+        """
+        results: list[dict] = []
+        seen: set[str] = set()
+        for query in PIPELINE_SEMANTIC_QUERIES:
+            try:
+                hits = vector_manager.search_repository_content(query, project_id, top_k=6)
+                for hit in hits:
+                    meta = hit.get("metadata", {})
+                    # Deduplicate by file_path + chunk_index
+                    uid = f"{meta.get('file_path', '')}:{meta.get('chunk_index', '')}"
+                    if uid not in seen:
+                        seen.add(uid)
+                        results.append(hit)
+            except Exception:
+                pass
+        return results
+
+    def _augment_metadata_with_retrieved_chunks(
+        self,
+        repo_metadata: dict,
+        all_files: list[dict],
+        retrieved: list[dict],
+    ) -> dict:
+        """
+        Rebuild the metadata dict so that semantically-retrieved (pipeline-relevant)
+        files appear first in each bucket, then fill the remainder with the original
+        files up to the same cap.  This focuses the LLM prompt without losing coverage.
+        """
+        files_by_path = {f["path"]: f for f in all_files}
+
+        # Collect unique paths in retrieval order (most relevant first)
+        prioritised_paths: list[str] = []
+        seen: set[str] = set()
+        for chunk in retrieved:
+            path = chunk.get("metadata", {}).get("file_path", "")
+            if path and path not in seen:
+                seen.add(path)
+                prioritised_paths.append(path)
+
+        aug_sql: list[dict] = []
+        aug_py: list[dict] = []
+        aug_yaml: list[dict] = []
+        aug_code: list[dict] = []
+
+        for path in prioritised_paths:
+            raw = files_by_path.get(path)
+            if not raw:
+                continue
+            d = {"path": path, "name": path.split("/")[-1], "content": raw["content"]}
+            ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+            if ext == ".sql":
+                aug_sql.append(d)
+            elif ext == ".py":
+                aug_py.append(d)
+            elif ext in (".yaml", ".yml"):
+                aug_yaml.append(d)
             else:
-                pipelines = data.get("pipelines", [])
-                summary = data.get("summary", "")
-            for p in pipelines:
+                aug_code.append(d)
+
+        def _merge(priority: list[dict], original: list, cap: int = 25) -> list:
+            p_paths = {f["path"] for f in priority}
+            extra = [f for f in original if f.get("path") not in p_paths]
+            return priority + extra[:max(0, cap - len(priority))]
+
+        augmented = dict(repo_metadata)
+        augmented["sql_files"] = _merge(aug_sql, repo_metadata.get("sql_files") or [])
+        augmented["python_files"] = _merge(aug_py, repo_metadata.get("python_files") or [])
+        augmented["yaml_files"] = _merge(aug_yaml, repo_metadata.get("yaml_files") or [])
+        augmented["code_files"] = _merge(aug_code, repo_metadata.get("code_files") or [])
+        return augmented
+
+    def _parse(self, raw: str) -> dict:
+        raw = (raw or "").strip()
+        # Strip ALL markdown code fences (not just at start/end)
+        cleaned = re.sub(r"```[a-z]*\n?", "", raw)
+        cleaned = re.sub(r"\n?```", "", cleaned)
+        cleaned = cleaned.strip()
+
+        # Try parsing in order: full cleaned string → extracted JSON object → extracted JSON array
+        candidates = [cleaned]
+        m_obj = re.search(r"\{.*\}", cleaned, re.DOTALL)
+        if m_obj:
+            candidates.append(m_obj.group(0))
+        m_arr = re.search(r"\[.*\]", cleaned, re.DOTALL)
+        if m_arr:
+            candidates.append(m_arr.group(0))
+
+        data = None
+        for attempt in candidates:
+            try:
+                data = json.loads(attempt)
+                break
+            except json.JSONDecodeError:
+                continue
+
+        if data is None:
+            logger.error("_parse: all JSON extraction attempts failed. raw (first 500): %s", raw[:500])
+            return {"pipelines": [], "count": 0, "summary": "Could not parse pipeline detection response."}
+
+        if isinstance(data, list):
+            pipelines = data
+            summary = ""
+        else:
+            pipelines = data.get("pipelines", [])
+            summary = data.get("summary", "")
+
+        for p in pipelines:
                 p.setdefault("id", "pipeline_" + str(pipelines.index(p) + 1))
                 p.setdefault("name", p["id"])
                 p.setdefault("description", "")
                 p.setdefault("type", "other")
-                p.setdefault("execution_mode", "batch")
                 p.setdefault("launcher", "unknown")
                 p.setdefault("confidence", 0.5)
                 p.setdefault("category", "other")
@@ -604,6 +792,34 @@ class PipelineDetectionAgent:
                     p["listen_mode"] = [{"type": "rabbitmq_consumer", "detail": p.get("queue_or_route") or p.get("name", "consumer")}]
                 if p.get("class_name") and not p.get("source_files"):
                     p["source_files"] = [p.get("class_name")]
+                # ── Infer execution_mode from actual signals — never blindly default to "batch" ──
+                listen_mode_val = p.get("listen_mode") or []
+                queues_val = p.get("queues") or []
+                triggers_val = p.get("triggers") or []
+                trigger_val = str(p.get("trigger") or "").lower()
+                ptype = str(p.get("type") or "").lower()
+                has_queue_signal = bool(listen_mode_val or queues_val or
+                    trigger_val in ("rabbitmq", "kafka", "sqs", "pubsub", "amqp") or
+                    ptype in ("consumer", "producer", "listener"))
+                has_cron_signal = any(
+                    str(t.get("type", "")).lower() in ("cron", "scheduled")
+                    for t in triggers_val
+                ) or trigger_val in ("cron", "scheduled")
+                has_webhook_signal = any(
+                    str(t.get("type", "")).lower() in ("webhook", "api_call", "http")
+                    for t in triggers_val
+                ) or trigger_val in ("http", "webhook")
+                if not p.get("execution_mode") or p.get("execution_mode") == "batch":
+                    if has_queue_signal:
+                        p["execution_mode"] = "event_driven"
+                    elif has_cron_signal:
+                        p["execution_mode"] = "scheduled"
+                    elif has_webhook_signal:
+                        p["execution_mode"] = "trigger_based"
+                    elif trigger_val in ("cli", "manual") or ptype in ("command",):
+                        p["execution_mode"] = "on_demand"
+                    else:
+                        p["execution_mode"] = "batch"
                 # Architecture fields — default to empty lists
                 p.setdefault("triggers", [])
                 p.setdefault("listen_mode", [])
@@ -621,10 +837,9 @@ class PipelineDetectionAgent:
                 p.setdefault("source_files", [])
                 p.setdefault("source_tables", [])
                 p.setdefault("technologies", [])
-            return {
-                "pipelines": pipelines,
-                "count": len(pipelines),
-                "summary": summary,
-            }
-        except json.JSONDecodeError:
-            return {"pipelines": [], "count": 0, "summary": "Could not parse pipeline detection response."}
+
+        return {
+            "pipelines": pipelines,
+            "count": len(pipelines),
+            "summary": summary,
+        }

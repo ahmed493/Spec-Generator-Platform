@@ -15,7 +15,7 @@ class OpenAIClient(BaseLLMClient):
         self.model = model or settings.openai_model
         self.client = OpenAI(api_key=api_key or settings.openai_api_key)
 
-    def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    def generate(self, prompt: str, system_prompt: Optional[str] = None, **kwargs) -> str:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -23,7 +23,8 @@ class OpenAIClient(BaseLLMClient):
 
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=messages
+            messages=messages,
+            **kwargs
         )
         return response.choices[0].message.content
 
