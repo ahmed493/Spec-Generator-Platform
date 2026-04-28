@@ -268,6 +268,48 @@ def _load_state() -> None:
 _load_state()
 
 
+def _db_project_to_dict(p) -> dict:
+    """Convert a SQLAlchemy Project ORM object to the _projects dict format."""
+    return {
+        "id": p.id,
+        "name": p.name,
+        "description": p.description or "",
+        "created_at": p.created_at.isoformat() if p.created_at else "",
+        "sources": [
+            {
+                "id": s.id,
+                "type": s.type,
+                "type_name": s.type_name,
+                "icon": s.icon,
+                "label": s.label,
+                "config": s.config or {},
+                "status": s.status,
+                "added_at": s.added_at.isoformat() if s.added_at else "",
+            }
+            for s in p.sources
+        ],
+    }
+
+
+def _load_projects_from_db() -> None:
+    """Populate _projects in-memory dict from the database on startup."""
+    try:
+        db = SessionLocal()
+        try:
+            all_projects = db.query(Project).all()
+            for p in all_projects:
+                _projects[p.id] = _db_project_to_dict(p)
+            if all_projects:
+                logger.info("Loaded %d projects from DB into memory", len(all_projects))
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.warning("Could not load projects from DB: %s", exc)
+
+
+_load_projects_from_db()
+
+
 # ============== REQUEST / RESPONSE MODELS ==============
 
 class GitHubConnectRequest(BaseModel):
@@ -1849,10 +1891,21 @@ async def pipeline_step_detect_pipelines(project_id: str):
     )
 
     agent = PipelineDetectionAgent()
+    # Try to initialise vectorstore for chunking + semantic retrieval augmentation
+    vm = None
+    try:
+        from app.vectorstore import get_vector_manager
+        vm = get_vector_manager()
+    except Exception as _vm_exc:
+        logger.warning("Pipeline detection: vectorstore init failed, will proceed without it: %s", _vm_exc)
+
     try:
         # Bound LLM latency so frontend never spins forever.
         with ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(agent.detect, metadata)
+            if vm is not None:
+                future = ex.submit(agent.detect_with_vectorstore, metadata, project_id, vm)
+            else:
+                future = ex.submit(agent.detect, metadata)
             result = future.result(timeout=90)
     except FuturesTimeoutError:
         result = {
@@ -2953,7 +3006,11 @@ async def create_project(req: CreateProjectRequest, db=Depends(get_db)):
     db.add(project)
     db.commit()
     db.refresh(project)
-    
+
+    # Keep in-memory dict in sync
+    _projects[project.id] = _db_project_to_dict(project)
+    _persist_state()
+
     return {
         "id": project.id,
         "name": project.name,
@@ -3004,7 +3061,11 @@ async def update_project(project_id: str, req: UpdateProjectRequest, db=Depends(
     
     db.commit()
     db.refresh(p)
-    
+
+    # Keep in-memory dict in sync
+    _projects[p.id] = _db_project_to_dict(p)
+    _persist_state()
+
     return {
         "id": p.id,
         "name": p.name,
@@ -3035,7 +3096,12 @@ async def delete_project(project_id: str, db=Depends(get_db)):
     
     db.delete(p)
     db.commit()
-    
+
+    # Keep in-memory dict in sync
+    _projects.pop(project_id, None)
+    _pipeline_state.pop(project_id, None)
+    _persist_state()
+
     return {"ok": True}
 
 
@@ -3081,7 +3147,21 @@ async def add_source(project_id: str, req: AddSourceRequest, db=Depends(get_db))
     db.add(source)
     db.commit()
     db.refresh(source)
-    
+
+    # Keep in-memory dict in sync
+    if project_id in _projects:
+        _projects[project_id]["sources"].append({
+            "id": source.id,
+            "type": source.type,
+            "type_name": source.type_name,
+            "icon": source.icon,
+            "label": source.label,
+            "config": source.config or {},
+            "status": source.status,
+            "added_at": source.added_at.isoformat() if source.added_at else "",
+        })
+        _persist_state()
+
     return {
         "id": source.id,
         "type": source.type,
@@ -3110,7 +3190,15 @@ async def remove_source(project_id: str, source_id: str, db=Depends(get_db)):
     
     db.delete(source)
     db.commit()
-    
+
+    # Keep in-memory dict in sync
+    if project_id in _projects:
+        _projects[project_id]["sources"] = [
+            s for s in _projects[project_id].get("sources", [])
+            if s["id"] != source_id
+        ]
+        _persist_state()
+
     return {"ok": True}
 
 
