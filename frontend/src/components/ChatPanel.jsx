@@ -49,7 +49,7 @@ export default function ChatPanel() {
   // Proactive suggestions based on pipeline step
   const suggestions = []
   if (pipelineStep === 1) {
-    const lowCount = (state.extractionResults || []).filter(r => r.confidence === 'low').length
+    const lowCount = (Array.isArray(state.extractionResults) ? state.extractionResults : []).filter(r => r.confidence === 'low').length
     if (lowCount > 0) suggestions.push(`You have ${lowCount} uncertain value${lowCount > 1 ? 's' : ''} — want me to suggest better ones?`)
   }
   if (pipelineStep === 2) {

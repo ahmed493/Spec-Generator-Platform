@@ -3,7 +3,7 @@ import {
   Plus, FolderOpen, Trash2, ArrowLeft, Zap, Loader2, X,
   CheckCircle, AlertCircle, Link2, FileText, Globe, AlignLeft,
   Github, Database, Cloud, BarChart3, HardDrive, BookOpen, FileSpreadsheet,
-  Search, Unplug, ScrollText, Download, Copy, Check,
+  Search, Unplug, ScrollText, Download, Copy, Check, BookMarked, Clock,
 } from 'lucide-react'
 import {
   getProjects, createProject, deleteProject,
@@ -12,6 +12,7 @@ import {
   getConnections,
   getGitHubRepos, getBigQueryDatasets, getPostgreSQLSchemas,
   getPowerBIWorkspaces, getGCSBuckets,
+  pipelineGetCatalog,
 } from '../api'
 import { useProject } from '../context/ProjectContext'
 
@@ -362,7 +363,7 @@ function AddSourceModal({ project, onClose, onAdded }) {
 /* ============================================================
    PROJECT WORKSPACE (inside a project — source manager)
 ============================================================ */
-function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
+function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadFromCatalog }) {
   const [removing, setRemoving] = useState(null)
   const [showAddSource, setShowAddSource] = useState(false)
   const [message, setMessage] = useState(null)
@@ -370,6 +371,47 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
   const [specsLoading, setSpecsLoading] = useState(true)
   const [viewingSpec, setViewingSpec] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [catalogSnapshots, setCatalogSnapshots] = useState([])
+  const [catalogLoading, setCatalogLoading] = useState(true)
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [expandedSnapshot, setExpandedSnapshot] = useState(null)
+  // mergeSelections: { [snapshotId]: Set<pipelineId> }
+  const [mergeSelections, setMergeSelections] = useState({})
+
+  const toggleMerge = (snapshotId, pipelineId) => {
+    setMergeSelections(prev => {
+      const cur = new Set(prev[snapshotId] || [])
+      cur.has(pipelineId) ? cur.delete(pipelineId) : cur.add(pipelineId)
+      return { ...prev, [snapshotId]: cur }
+    })
+  }
+
+  const mergePipelinesFromCatalog = (selected) => {
+    if (selected.length === 1) return selected[0]
+    return {
+      id: `catalog_merged_${Date.now()}`,
+      name: selected.map(p => p.name).join(' + '),
+      description: selected.map(p => p.description).filter(Boolean).join(' | '),
+      type: selected[0].type,
+      execution_mode: selected[0].execution_mode,
+      confidence: Math.max(...selected.map(p => p.confidence || 0)),
+      origin: 'catalog_merge',
+      source_files: [...new Set(selected.flatMap(p => p.source_files || []))],
+      source_tables: [...new Set(selected.flatMap(p => p.source_tables || []))],
+      technologies: [...new Set(selected.flatMap(p => p.technologies || []))],
+      jobs: selected.flatMap(p => p.jobs || []),
+      triggers: selected.flatMap(p => p.triggers || []),
+      listen_mode: selected.flatMap(p => p.listen_mode || []),
+      queues: selected.flatMap(p => p.queues || []),
+      sub_pipelines: [...new Set(selected.flatMap(p => p.sub_pipelines || []))],
+      explainability: {
+        keywords: [...new Set(selected.flatMap(p => p.explainability?.keywords || []))],
+        orchestration_clues: [...new Set(selected.flatMap(p => p.explainability?.orchestration_clues || []))],
+        evidence_files: [...new Set(selected.flatMap(p => p.explainability?.evidence_files || []))],
+        evidence_tables: [...new Set(selected.flatMap(p => p.explainability?.evidence_tables || []))],
+      },
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -382,6 +424,19 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
       setSpecsLoading(false)
     }
     load()
+  }, [project.id])
+
+  useEffect(() => {
+    const loadCatalog = async () => {
+      try {
+        const res = await pipelineGetCatalog(project.id)
+        setCatalogSnapshots(res.data.catalog || [])
+      } catch {
+        setCatalogSnapshots([])
+      }
+      setCatalogLoading(false)
+    }
+    loadCatalog()
   }, [project.id])
 
   const handleDownloadSpec = (entry) => {
@@ -604,6 +659,195 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline }) {
         )}
       </div>
 
+      {/* ── Detected Pipelines Catalog ── */}
+      <div style={{ marginTop: 32 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BookMarked size={16} style={{ color: 'var(--accent)' }} />
+            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Detected Pipelines Catalog</span>
+            {catalogSnapshots.length > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(14,165,233,.12)', color: 'var(--accent)', border: '1px solid rgba(14,165,233,.22)', borderRadius: 999, padding: '1px 8px' }}>
+                {catalogSnapshots.reduce((sum, s) => sum + s.count, 0)} pipelines · {catalogSnapshots.length} snapshot{catalogSnapshots.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {catalogLoading && <div className="loading"><div className="spinner" /><span>Loading catalog…</span></div>}
+
+        {!catalogLoading && catalogSnapshots.length === 0 && (
+          <div className="sources-empty-state">
+            <div className="se-icon-wrap"><BookMarked size={22} /></div>
+            <div className="se-title">No pipeline snapshots saved</div>
+            <p className="se-desc">
+              Run pipeline detection and click <strong>Save to Catalog</strong> in the detection step to preserve a snapshot here.
+            </p>
+          </div>
+        )}
+
+        {!catalogLoading && catalogSnapshots.length > 0 && (
+          <>
+            <div style={{ position: 'relative', marginBottom: 10 }}>
+              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+              <input
+                type="text"
+                placeholder="Search catalog pipelines…"
+                value={catalogSearch}
+                onChange={e => setCatalogSearch(e.target.value)}
+                style={{
+                  width: '100%', paddingLeft: 30, paddingRight: 8, paddingTop: 6, paddingBottom: 6,
+                  fontSize: 12, border: '1px solid var(--border)', borderRadius: 6,
+                  background: 'var(--surface)', color: 'var(--text-primary)', boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[...catalogSnapshots].reverse().map((snapshot) => {
+                const isExpanded = expandedSnapshot === snapshot.id
+                const q = catalogSearch.toLowerCase()
+                const matchedPipelines = q
+                  ? snapshot.pipelines.filter(p => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q))
+                  : snapshot.pipelines
+                if (q && matchedPipelines.length === 0) return null
+                return (
+                  <div key={snapshot.id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-elevated)', overflow: 'hidden' }}>
+                    <div
+                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}
+                      onClick={() => setExpandedSnapshot(isExpanded ? null : snapshot.id)}
+                    >
+                      <BookMarked size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                          {snapshot.count} pipeline{snapshot.count !== 1 ? 's' : ''}
+                        </span>
+                        <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--text-secondary)' }}>
+                          <Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />
+                          {new Date(snapshot.saved_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {q && <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--accent)' }}>{matchedPipelines.length} match{matchedPipelines.length !== 1 ? 'es' : ''}</span>}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{isExpanded ? '▲' : '▼'}</span>
+                    </div>
+                    {isExpanded && (
+                      <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {/* Merge action bar */}
+                        {(() => {
+                          const sel = mergeSelections[snapshot.id]
+                          const selCount = sel ? sel.size : 0
+                          const allIds = matchedPipelines.map(p => p.id)
+                          const allSelected = allIds.length > 0 && allIds.every(id => sel?.has(id))
+                          return (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={allSelected}
+                                  onChange={() => {
+                                    if (allSelected) {
+                                      setMergeSelections(prev => ({ ...prev, [snapshot.id]: new Set() }))
+                                    } else {
+                                      setMergeSelections(prev => ({ ...prev, [snapshot.id]: new Set(allIds) }))
+                                    }
+                                  }}
+                                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                                />
+                                Select all
+                              </label>
+                              {selCount >= 2 && (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ fontSize: 11, padding: '4px 12px' }}
+                                  onClick={() => {
+                                    const selected = matchedPipelines.filter(p => sel.has(p.id))
+                                    const merged = mergePipelinesFromCatalog(selected)
+                                    onLoadFromCatalog && onLoadFromCatalog(project, [merged], merged)
+                                  }}
+                                >
+                                  Merge {selCount} & Use for Spec →
+                                </button>
+                              )}
+                              {selCount === 1 && (
+                                <button
+                                  className="btn btn-primary"
+                                  style={{ fontSize: 11, padding: '4px 12px' }}
+                                  onClick={() => {
+                                    const selected = matchedPipelines.find(p => sel.has(p.id))
+                                    onLoadFromCatalog && onLoadFromCatalog(project, [selected], selected)
+                                  }}
+                                >
+                                  Use selected for Spec →
+                                </button>
+                              )}
+                              {selCount > 0 && (
+                                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                  {selCount} selected
+                                </span>
+                              )}
+                            </div>
+                          )
+                        })()}
+
+                        {matchedPipelines.map(p => {
+                          const isChecked = mergeSelections[snapshot.id]?.has(p.id) || false
+                          return (
+                            <div key={p.id} style={{
+                              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px',
+                              border: `1px solid ${isChecked ? 'rgba(14,165,233,.4)' : 'var(--border)'}`,
+                              borderRadius: 8, background: isChecked ? 'rgba(14,165,233,.05)' : 'var(--surface)',
+                              transition: 'border-color .2s, background .2s',
+                            }}>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleMerge(snapshot.id, p.id)}
+                                style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
+                              />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{p.name}</span>
+                                  {p.category && (
+                                    <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(14,165,233,.1)', color: 'var(--accent)', border: '1px solid rgba(14,165,233,.2)', borderRadius: 999, padding: '1px 7px' }}>
+                                      {p.category}
+                                    </span>
+                                  )}
+                                  {p.execution_mode && (
+                                    <span style={{ fontSize: 10, fontWeight: 600, background: 'rgba(124,58,237,.1)', color: '#a78bfa', border: '1px solid rgba(124,58,237,.2)', borderRadius: 999, padding: '1px 7px' }}>
+                                      {p.execution_mode}
+                                    </span>
+                                  )}
+                                  {p.confidence != null && (
+                                    <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
+                                      {Math.round(p.confidence * 100)}% confidence
+                                    </span>
+                                  )}
+                                </div>
+                                {p.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{p.description}</div>}
+                                {p.source_files?.length > 0 && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                    {p.source_files.slice(0, 3).join(', ')}{p.source_files.length > 3 ? ` +${p.source_files.length - 3} more` : ''}
+                                  </div>
+                                )}
+                              </div>
+                              <button
+                                className="btn btn-secondary"
+                                style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}
+                                onClick={() => onLoadFromCatalog && onLoadFromCatalog(project, [p], p)}
+                              >
+                                Use for Spec →
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
       {/* Spec viewer modal */}
       {viewingSpec && (
         <div className="modal-overlay" onClick={() => setViewingSpec(null)}>
@@ -716,6 +960,7 @@ function ProjectsPage() {
         onBack={() => { setOpenProjectId(null); fetchProjects() }}
         onRefresh={() => fetchOpenProject(openProject.id)}
         onStartPipeline={(proj) => dispatch({ type: 'OPEN_PROJECT', payload: proj })}
+        onLoadFromCatalog={(proj, pipelines, selected) => dispatch({ type: 'LOAD_FROM_CATALOG', payload: { project: proj, pipelines, selectedPipeline: selected } })}
       />
     )
   }

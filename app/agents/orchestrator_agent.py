@@ -93,7 +93,11 @@ class OrchestratorAgent:
         validation = self.validation_agent.validate(fields, extracted_values)
 
         # Step 5: Compose the final filled spec using MappingAgent
-        spec = self.mapping_agent.compose(template_text, extracted_values, fields)
+        pipeline_ctx_for_mapping = repo_metadata.get("datasource_context", "")
+        spec = self.mapping_agent.compose(
+            template_text, extracted_values, fields,
+            pipeline_context=pipeline_ctx_for_mapping,
+        )
 
         return {
             "spec": spec,

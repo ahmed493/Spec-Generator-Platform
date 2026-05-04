@@ -95,7 +95,7 @@ export const getProjectApprovedSpecs = (projectId) =>
 
 // ================= PIPELINE (step-by-step) =================
 export const pipelineDetectPipelines = (projectId) =>
-  api.post(`/projects/${projectId}/pipeline/detect-pipelines`, null, { timeout: 180000 })
+  api.post(`/projects/${projectId}/pipeline/detect-pipelines`, null, { timeout: 600000 })
 export const pipelineSelect = (projectId, pipelineId) =>
   api.post(`/projects/${projectId}/pipeline/select`, { pipeline_id: pipelineId })
 export const pipelineUpdatePipelines = (projectId, pipelines) =>
@@ -115,6 +115,10 @@ export const pipelineReorder = (projectId, pipelineIds) =>
   api.post(`/projects/${projectId}/pipeline/reorder`, { pipeline_ids: pipelineIds })
 export const pipelineResetPipelines = (projectId) =>
   api.post(`/projects/${projectId}/pipeline/reset-pipelines`)
+export const pipelineSaveCatalog = (projectId) =>
+  api.post(`/projects/${projectId}/pipeline/save-catalog`)
+export const pipelineGetCatalog = (projectId) =>
+  api.get(`/projects/${projectId}/pipeline/catalog`)
 export const pipelineTemplate = (projectId, templateFile) => {
   const formData = new FormData()
   formData.append('template_file', templateFile)

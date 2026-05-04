@@ -65,6 +65,29 @@ function reducer(state, action) {
     // Pipeline
     case 'SET_PIPELINE_STEP':
       return { ...state, pipelineStep: action.payload }
+    // Load a pipeline (or merged set) from the catalog, skip detection, go to template
+    case 'LOAD_FROM_CATALOG': {
+      const { project, pipelines, selectedPipeline } = action.payload
+      return {
+        ...state,
+        currentPage: 'pipeline',
+        project,
+        projectId: project.id,
+        pipelineStep: 1,
+        gates: [true, false, false, false],
+        detectedPipelines: pipelines,
+        selectedPipeline,
+        templateTitle: '',
+        placeholders: [],
+        extractionResults: [],
+        confirmedValues: {},
+        spec: '',
+        validation: null,
+        specVersions: [],
+        approvedVersionId: null,
+        chatHistory: [],
+      }
+    }
     case 'SET_DETECTED_PIPELINES':
       return { ...state, detectedPipelines: action.payload }
     case 'SET_SELECTED_PIPELINE':

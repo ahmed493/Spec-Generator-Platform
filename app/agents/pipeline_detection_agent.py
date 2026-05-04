@@ -37,6 +37,69 @@ PIPELINE_SEMANTIC_QUERIES = [
     "spring batch job step reader writer listener scheduled",
 ]
 
+# Threshold above which detect() switches to multi-pass batched mode
+BATCH_DETECTION_FILE_THRESHOLD = 40
+# Number of code files fed to each individual LLM call in batched mode
+# Keep small: each LLM call ~40-50s, and total timeout is 600s
+BATCH_DETECTION_BATCH_SIZE = 20
+
+# ---------------------------------------------------------------------------
+# Path-pattern heuristics — detect pipelines from file names alone (no content)
+# Each tuple: (compiled_regex, execution_mode, pipeline_type)
+# Order matters: more specific patterns first.
+# ---------------------------------------------------------------------------
+_PATH_PIPELINE_PATTERNS: list[tuple] = [
+    # PHP / Symfony — scheduled commands first (contain "Schedule")
+    (re.compile(r"(?i).*/?(?:schedule[^/]*|[^/]*schedule)[^/]*command\.php$"), "scheduled", "command"),
+    (re.compile(r"(?i).*command\.php$"), "on_demand", "command"),
+    (re.compile(r"(?i).*consumer\.php$"), "event_driven", "consumer"),
+    (re.compile(r"(?i).*producer\.php$"), "event_driven", "producer"),
+    (re.compile(r"(?i).*listener\.php$"), "event_driven", "listener"),
+    (re.compile(r"(?i).*subscriber\.php$"), "event_driven", "subscriber"),
+    (re.compile(r"(?i).*handler\.php$"), "event_driven", "handler"),
+    # Python / Airflow
+    (re.compile(r"(?i).*/dag(?:s)?/[^/]+\.py$"), "scheduled", "dag"),
+    (re.compile(r"(?i).*/task(?:s)?/[^/]+\.py$"), "on_demand", "task"),
+    (re.compile(r"(?i).*/worker(?:s)?/[^/]+\.py$"), "event_driven", "worker"),
+    (re.compile(r"(?i).*/job(?:s)?/[^/]+\.py$"), "on_demand", "batch"),
+    (re.compile(r"(?i).*/consumer(?:s)?/[^/]+\.py$"), "event_driven", "consumer"),
+    (re.compile(r"(?i).*_(?:task|worker|dag|consumer|producer|handler)\.py$"), "event_driven", "job"),
+    # Java / Spring
+    (re.compile(r"(?i).*listener\.java$"), "event_driven", "listener"),
+    (re.compile(r"(?i).*consumer\.java$"), "event_driven", "consumer"),
+    (re.compile(r"(?i).*producer\.java$"), "event_driven", "producer"),
+    (re.compile(r"(?i).*scheduler\.java$"), "scheduled", "scheduler"),
+    (re.compile(r"(?i).*processor\.java$"), "batch", "processor"),
+    (re.compile(r"(?i).*handler\.java$"), "event_driven", "handler"),
+    (re.compile(r"(?i).*batch[^/]*\.java$"), "batch", "batch"),
+    # Node / TypeScript
+    (re.compile(r"(?i).*worker\.(ts|js)$"), "event_driven", "worker"),
+    (re.compile(r"(?i).*consumer\.(ts|js)$"), "event_driven", "consumer"),
+    (re.compile(r"(?i).*producer\.(ts|js)$"), "event_driven", "producer"),
+    (re.compile(r"(?i).*/job(?:s)?/[^/]+\.(ts|js)$"), "on_demand", "job"),
+    # SQL / Shell
+    (re.compile(r"(?i).*/etl/[^/]+\.sql$"), "batch", "etl"),
+    (re.compile(r"(?i).*_etl\.sql$"), "batch", "etl"),
+    (re.compile(r"(?i).*/script(?:s)?/[^/]+\.sh$"), "on_demand", "script"),
+]
+
+_PATH_CATEGORY_PATTERNS: list[tuple] = [
+    (re.compile(r"(?i)accounting|invoice|billing|payment|sage|salvia|pis|sdtc|dunning|refund|irrecoverable"), "accounting"),
+    (re.compile(r"(?i)crm|contract|subscription|customer|client|contrat"), "crm"),
+    (re.compile(r"(?i)report|export|csv|stat|scoring|churn|partner"), "reporting"),
+    (re.compile(r"(?i)grd|enedis|grdf|grid|pdl|load.shedding|linky"), "grd"),
+    (re.compile(r"(?i)\blp2\b|site.?sync|attestation"), "lp2"),
+    (re.compile(r"(?i)haulo|haulogy"), "haulogy"),
+    (re.compile(r"(?i)sponsor|aklamio"), "sponsorship"),
+    (re.compile(r"(?i)delco|mandate|gestpay"), "delco"),
+    (re.compile(r"(?i)energy|energycomm|pce|plm"), "energy"),
+    (re.compile(r"(?i)\bsync\b|integration|import|export"), "sync"),
+    (re.compile(r"(?i)auth|security|token|oauth|sso"), "auth"),
+    (re.compile(r"(?i)notif|email|sms|mail|push|alert"), "notification"),
+    (re.compile(r"(?i)\bml\b|model|train|predict|inference"), "ml"),
+    (re.compile(r"(?i)monitor|health|metric|log"), "monitoring"),
+]
+
 
 DETECTION_SYSTEM_PROMPT = """You are a senior data engineering architect and reverse-engineering expert.
 You perform EXHAUSTIVE codebase analysis — you DO NOT stop at a summary; you enumerate EVERY
@@ -324,6 +387,15 @@ class PipelineDetectionAgent:
         Returns:
           { pipelines: [...], count: int, summary: str }
         """
+        all_code = self._iter_code_entries(repo_metadata)
+        if len(all_code) > BATCH_DETECTION_FILE_THRESHOLD:
+            logger.info(
+                "PipelineDetectionAgent: large repo (%d code files) — switching to "
+                "multi-pass batched detection (batch_size=%d)",
+                len(all_code), BATCH_DETECTION_BATCH_SIZE,
+            )
+            return self._detect_batched(repo_metadata, all_code)
+
         summary = self._build_summary(repo_metadata)
         logger.info(
             "PipelineDetectionAgent — summary built: %d chars, "
@@ -367,7 +439,7 @@ class PipelineDetectionAgent:
 
     # ── Private helpers ──────────────────────────────────────────────────────
 
-    def _build_summary(self, metadata: dict) -> str:
+    def _build_summary(self, metadata: dict, batch_mode: bool = False) -> str:
         parts = []
         parts.append(f"Project: {metadata.get('repo_name', 'N/A')}")
         parts.append(f"Description: {metadata.get('description', 'N/A')}")
@@ -418,7 +490,8 @@ class PipelineDetectionAgent:
             if not files_for_ext:
                 continue
             parts.append(f"\n## {label} files ({len(files_for_ext)}):")
-            limit = 15 if ext not in (".json",) else 5
+            # In batch mode show every file in the batch; normally cap per extension.
+            limit = len(files_for_ext) if batch_mode else (15 if ext not in (".json",) else 5)
             for f in files_for_ext[:limit]:
                 content = (f.get("content") or "")  # full content — already capped at 4000 chars when fetched
                 parts.append(f"### {f['path']}:\n```{lang}\n{content}\n```")
@@ -446,6 +519,221 @@ class PipelineDetectionAgent:
         for key in ("sql_files", "python_files", "yaml_files", "json_files", "notebook_files", "code_files"):
             all_code.extend(metadata.get(key) or [])
         return all_code
+
+    def _detect_batched(self, repo_metadata: dict, all_code: list[dict]) -> dict:
+        """
+        Multi-pass detection for large repos.
+        Splits all code files into batches of BATCH_DETECTION_BATCH_SIZE, runs a
+        focused LLM call on each batch (no file-count cap applied), then merges
+        all results together with path-only and content-heuristic supplementation.
+        """
+        use_symfony = self._should_use_symfony_flux_prompt(repo_metadata)
+
+        # For Symfony/PHP repos the LLM responses are truncated mid-JSON due to the
+        # volume of PHP namespace strings, causing every batch to return 0 pipelines.
+        # The path-only heuristic recovers all pipelines from file names in <5s and
+        # is the correct strategy for this stack — skip LLM batching entirely.
+        all_paths = [
+            f["path"]
+            for f in (repo_metadata.get("structure", {}).get("files", []) or [])
+        ]
+        if use_symfony:
+            logger.info(
+                "PipelineDetectionAgent._detect_batched: Symfony/PHP repo detected — "
+                "skipping LLM batching, using path heuristic + content heuristic only."
+            )
+            path_pipelines = self._detect_from_paths_only(all_paths)
+            heuristic_pipelines = self._extract_runtime_pipelines_from_code(repo_metadata)
+            merged = self._merge_batched_results([], heuristic_pipelines, path_pipelines)
+            logger.info(
+                "PipelineDetectionAgent._detect_batched (symfony fast): path=%d heuristic=%d merged=%d",
+                len(path_pipelines), len(heuristic_pipelines), len(merged),
+            )
+            return {
+                "pipelines": merged,
+                "count": len(merged),
+                "summary": (
+                    f"Detected {len(merged)} pipelines via path + content heuristics "
+                    f"({len(all_paths)} tree paths analysed)."
+                ),
+            }
+
+        batches = [
+            all_code[i: i + BATCH_DETECTION_BATCH_SIZE]
+            for i in range(0, len(all_code), BATCH_DETECTION_BATCH_SIZE)
+        ]
+        logger.info("PipelineDetectionAgent._detect_batched: %d batches × up to %d files", len(batches), BATCH_DETECTION_BATCH_SIZE)
+
+        prompt_template = DETECTION_PROMPT
+        system_prompt = DETECTION_SYSTEM_PROMPT
+
+        all_llm_pipelines: list[dict] = []
+        for i, batch_files in enumerate(batches):
+            try:
+                batch_meta = dict(repo_metadata)
+                batch_meta["sql_files"]      = [f for f in batch_files if f["path"].endswith(".sql")]
+                batch_meta["python_files"]   = [f for f in batch_files if f["path"].endswith(".py")]
+                batch_meta["yaml_files"]     = [f for f in batch_files if f["path"].endswith((".yaml", ".yml", ".toml", ".cfg", ".ini"))]
+                batch_meta["code_files"]     = [f for f in batch_files
+                                                 if not f["path"].endswith((".sql", ".py", ".yaml", ".yml", ".toml", ".cfg", ".ini"))]
+                batch_meta["json_files"]     = []
+                batch_meta["notebook_files"] = []
+
+                summary = self._build_summary(batch_meta, batch_mode=True)
+                prompt = prompt_template.format(metadata_summary=summary)
+                raw = self.llm.generate(
+                    prompt,
+                    system_prompt=system_prompt,
+                    response_format={"type": "json_object"},
+                    max_tokens=16384,
+                )
+                parsed = self._parse(raw)
+                batch_pipelines = parsed.get("pipelines") or []
+                logger.info("Batch %d/%d → %d pipelines", i + 1, len(batches), len(batch_pipelines))
+                all_llm_pipelines.extend(batch_pipelines)
+            except Exception as exc:
+                logger.warning("PipelineDetectionAgent batch %d/%d failed: %s", i + 1, len(batches), exc)
+
+        path_pipelines = self._detect_from_paths_only(all_paths)
+        heuristic_pipelines = self._extract_runtime_pipelines_from_code(repo_metadata)
+
+        merged = self._merge_batched_results(all_llm_pipelines, heuristic_pipelines, path_pipelines)
+        logger.info(
+            "PipelineDetectionAgent._detect_batched: llm=%d path=%d heuristic=%d merged=%d",
+            len(all_llm_pipelines), len(path_pipelines), len(heuristic_pipelines), len(merged),
+        )
+        return {
+            "pipelines": merged,
+            "count": len(merged),
+            "summary": (
+                f"Detected {len(merged)} pipelines across {len(batches)} LLM passes "
+                f"({len(all_code)} fetched files + {len(all_paths)} tree paths analysed)."
+            ),
+        }
+
+    def _detect_from_paths_only(self, file_paths: list[str]) -> list[dict]:
+        """
+        Fast heuristic: infer pipeline candidates purely from file-path patterns.
+        No content fetching required — works on the full git tree output instantly.
+        Confidence is lower (0.72) than LLM or content-based detection; these entries
+        are used as supplements when the LLM missed a file or detection timed out.
+        """
+        _lang_map = {
+            ".php": "PHP", ".py": "Python", ".java": "Java", ".kt": "Kotlin",
+            ".js": "JavaScript", ".ts": "TypeScript", ".go": "Go", ".cs": "C#",
+            ".rb": "Ruby", ".rs": "Rust", ".sh": "Shell", ".sql": "SQL",
+        }
+        pipelines: list[dict] = []
+        seen_ids: set[str] = set()
+
+        for path in file_paths:
+            for pattern, exec_mode, ptype in _PATH_PIPELINE_PATTERNS:
+                if not pattern.match(path):
+                    continue
+
+                # Infer business category from path tokens
+                category = "other"
+                for cat_pat, cat in _PATH_CATEGORY_PATTERNS:
+                    if cat_pat.search(path):
+                        category = cat
+                        break
+
+                stem = re.sub(r"[^a-z0-9]+", "_", path.lower()).strip("_")[-80:]
+                pid = f"path_{stem}"
+                if pid in seen_ids:
+                    break
+                seen_ids.add(pid)
+
+                filename = path.split("/")[-1]
+                raw_name = filename.rsplit(".", 1)[0]
+                # CamelCase → spaced
+                name = re.sub(r"(?<=[a-z])(?=[A-Z])", " ", raw_name)
+                name = name.replace("_", " ").replace("-", " ").strip()
+
+                ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
+                lang = _lang_map.get(ext, "Unknown")
+
+                trigger_type = (
+                    "cron" if exec_mode == "scheduled"
+                    else "queue_message" if exec_mode == "event_driven"
+                    else "manual"
+                )
+                listen_mode: list[dict] = []
+                if ptype in ("consumer", "listener", "subscriber"):
+                    listen_mode = [{"type": "rabbitmq_consumer", "detail": f"Pattern match: {filename}"}]
+
+                pipelines.append({
+                    "id": pid,
+                    "name": name,
+                    "description": f"{ptype.title()} detected via path pattern in {path}.",
+                    "type": ptype,
+                    "execution_mode": exec_mode,
+                    "category": category,
+                    "confidence": 0.72,
+                    "launcher": "application_runtime",
+                    "triggers": [{"type": trigger_type, "detail": f"Inferred from path: {path}"}],
+                    "listen_mode": listen_mode,
+                    "queues": [],
+                    "jobs": [{
+                        "id": f"job_{stem[-30:]}",
+                        "name": name,
+                        "file": path,
+                        "description": f"{ptype.title()} in {filename}",
+                        "order": 1,
+                    }],
+                    "sub_pipelines": [],
+                    "parent_pipeline": None,
+                    "explainability": {
+                        "keywords": [ptype, exec_mode],
+                        "orchestration_clues": [f"path_pattern:{ptype}"],
+                        "evidence_files": [path],
+                        "evidence_tables": [],
+                    },
+                    "source_files": [path],
+                    "source_tables": [],
+                    "technologies": [lang],
+                })
+                break  # one match per file
+
+        return pipelines
+
+    def _merge_batched_results(
+        self,
+        llm_pipelines: list[dict],
+        heuristic_pipelines: list[dict],
+        path_pipelines: list[dict],
+    ) -> list[dict]:
+        """
+        Merge results from multi-pass LLM, content heuristic, and path heuristic.
+        Priority: LLM > content heuristic > path heuristic.
+        A path/heuristic entry is suppressed if any of its source files is already
+        covered by an LLM entry.
+        """
+        seen_paths: set[str] = set()
+        merged: list[dict] = []
+
+        for p in llm_pipelines:
+            for f in (p.get("source_files") or []):
+                seen_paths.add(str(f))
+            merged.append(p)
+
+        for p in heuristic_pipelines:
+            paths = [str(f) for f in (p.get("source_files") or [])]
+            if paths and all(path in seen_paths for path in paths):
+                continue
+            for path in paths:
+                seen_paths.add(path)
+            merged.append(p)
+
+        for p in path_pipelines:
+            paths = [str(f) for f in (p.get("source_files") or [])]
+            if paths and all(path in seen_paths for path in paths):
+                continue
+            for path in paths:
+                seen_paths.add(path)
+            merged.append(p)
+
+        return merged
 
     def _extract_runtime_pipelines_from_code(self, metadata: dict) -> list[dict]:
         runtime_exts = {".py", ".php", ".java", ".kt", ".scala", ".js", ".ts", ".go", ".cs", ".rb", ".rs", ".sh", ".sql"}
@@ -681,6 +969,19 @@ class PipelineDetectionAgent:
         """
         files_by_path = {f["path"]: f for f in all_files}
 
+        # Build synthetic file entries from retrieved chunks so we can leverage
+        # vectorstore hits even when that file was not part of the initially fetched subset.
+        retrieved_content_by_path: dict[str, str] = {}
+        for chunk in retrieved:
+            path = str(chunk.get("metadata", {}).get("file_path", "") or "")
+            content = str(chunk.get("content", "") or "")
+            if not path or not content:
+                continue
+            if path not in retrieved_content_by_path:
+                retrieved_content_by_path[path] = content
+            elif content not in retrieved_content_by_path[path]:
+                retrieved_content_by_path[path] += "\n\n" + content
+
         # Collect unique paths in retrieval order (most relevant first)
         prioritised_paths: list[str] = []
         seen: set[str] = set()
@@ -697,9 +998,13 @@ class PipelineDetectionAgent:
 
         for path in prioritised_paths:
             raw = files_by_path.get(path)
-            if not raw:
+            if raw:
+                content = raw.get("content", "")
+            else:
+                content = retrieved_content_by_path.get(path, "")
+            if not content:
                 continue
-            d = {"path": path, "name": path.split("/")[-1], "content": raw["content"]}
+            d = {"path": path, "name": path.split("/")[-1], "content": content}
             ext = ("." + path.rsplit(".", 1)[-1].lower()) if "." in path else ""
             if ext == ".sql":
                 aug_sql.append(d)
@@ -710,7 +1015,7 @@ class PipelineDetectionAgent:
             else:
                 aug_code.append(d)
 
-        def _merge(priority: list[dict], original: list, cap: int = 25) -> list:
+        def _merge(priority: list[dict], original: list, cap: int = 120) -> list:
             p_paths = {f["path"] for f in priority}
             extra = [f for f in original if f.get("path") not in p_paths]
             return priority + extra[:max(0, cap - len(priority))]
@@ -722,6 +1027,26 @@ class PipelineDetectionAgent:
         augmented["code_files"] = _merge(aug_code, repo_metadata.get("code_files") or [])
         return augmented
 
+    @staticmethod
+    def _repair_json(text: str) -> str:
+        """
+        Fix common LLM JSON errors before parsing:
+        1. Invalid backslash escapes — PHP/Java namespaces like Ve\\Bundle become Ve\\\\Bundle
+           Only characters that ARE valid JSON escapes are left alone: " \\ / b f n r t u
+        2. Trailing commas before } or ]
+        """
+        # Fix invalid escape sequences: replace \X where X is not a valid JSON escape char
+        # Valid: \", \\, \/, \b, \f, \n, \r, \t, \uXXXX
+        def fix_escapes(m: re.Match) -> str:
+            ch = m.group(1)
+            if ch in ('"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'):
+                return m.group(0)  # valid — keep as-is
+            return '\\\\' + ch    # double-escape it
+        text = re.sub(r'\\([^"\\\//bfnrtu])', fix_escapes, text)
+        # Fix trailing commas
+        text = re.sub(r',\s*([}\]])', r'\1', text)
+        return text
+
     def _parse(self, raw: str) -> dict:
         raw = (raw or "").strip()
         # Strip ALL markdown code fences (not just at start/end)
@@ -730,13 +1055,22 @@ class PipelineDetectionAgent:
         cleaned = cleaned.strip()
 
         # Try parsing in order: full cleaned string → extracted JSON object → extracted JSON array
-        candidates = [cleaned]
+        # Each candidate is tried raw first, then with JSON repair applied.
+        base_candidates: list[str] = [cleaned]
         m_obj = re.search(r"\{.*\}", cleaned, re.DOTALL)
         if m_obj:
-            candidates.append(m_obj.group(0))
+            base_candidates.append(m_obj.group(0))
         m_arr = re.search(r"\[.*\]", cleaned, re.DOTALL)
         if m_arr:
-            candidates.append(m_arr.group(0))
+            base_candidates.append(m_arr.group(0))
+
+        # Build attempt list: try each candidate as-is, then repaired
+        candidates: list[str] = []
+        for c in base_candidates:
+            candidates.append(c)
+            repaired = self._repair_json(c)
+            if repaired != c:
+                candidates.append(repaired)
 
         data = None
         for attempt in candidates:

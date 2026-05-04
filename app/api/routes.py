@@ -21,10 +21,22 @@ import json
 import difflib
 import logging
 import uuid as _uuid
+import time as _time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime as _dt
 
 logger = logging.getLogger(__name__)
+
+def _new_id() -> str:
+    return _uuid.uuid4().hex[:12]
+
+def _now() -> str:
+    return _dt.utcnow().isoformat() + "Z"
+
+PIPELINE_DETECTION_TIMEOUT_SECONDS = 600
+PIPELINE_DETECTION_MAX_FILES_PER_REPO = 200   # reduced: batched LLM handles large repos in-agent
+PIPELINE_DETECTION_MAX_TREE_PATHS = 5000      # keep the full tree for path-only heuristics
+PIPELINE_DETECTION_MAX_FETCH_SECONDS_PER_REPO = 120  # 2 min fetch budget; batching does the rest
 
 router = APIRouter()
 
@@ -1790,7 +1802,19 @@ def _get_repo_metadata_lightweight(owner: str, repo_name: str, preferred_branch:
         except Exception:
             return ""
 
-    for file_path, _ in priority_files[:180]:
+    started_at = _time.monotonic()
+    fetched = 0
+    for file_path, _ in priority_files:
+        if fetched >= PIPELINE_DETECTION_MAX_FILES_PER_REPO:
+            break
+        if (_time.monotonic() - started_at) >= PIPELINE_DETECTION_MAX_FETCH_SECONDS_PER_REPO:
+            logger.info(
+                "Pipeline detection metadata budget reached for %s/%s after %d files",
+                owner,
+                repo_name,
+                fetched,
+            )
+            break
         try:
             content = _fetch_content_direct(file_path)
             if not content:
@@ -1806,6 +1830,7 @@ def _get_repo_metadata_lightweight(owner: str, repo_name: str, preferred_branch:
                 yaml_files.append(entry)
             else:
                 code_files.append(entry)
+            fetched += 1
         except Exception:
             pass
 
@@ -1816,7 +1841,7 @@ def _get_repo_metadata_lightweight(owner: str, repo_name: str, preferred_branch:
         "languages": languages,
         "topics": topics,
         "readme": readme[:6000],
-        "structure": {"files": [{"path": p} for p in all_file_paths[:500]]},
+        "structure": {"files": [{"path": p} for p in all_file_paths[:PIPELINE_DETECTION_MAX_TREE_PATHS]]},
         "sql_files": sql_files,
         "python_files": python_files,
         "yaml_files": yaml_files,
@@ -1899,39 +1924,63 @@ async def pipeline_step_detect_pipelines(project_id: str):
     except Exception as _vm_exc:
         logger.warning("Pipeline detection: vectorstore init failed, will proceed without it: %s", _vm_exc)
 
+    ex = ThreadPoolExecutor(max_workers=1)
+    future = None
     try:
         # Bound LLM latency so frontend never spins forever.
-        with ThreadPoolExecutor(max_workers=1) as ex:
-            if vm is not None:
-                future = ex.submit(agent.detect_with_vectorstore, metadata, project_id, vm)
-            else:
-                future = ex.submit(agent.detect, metadata)
-            result = future.result(timeout=90)
+        if vm is not None:
+            future = ex.submit(agent.detect_with_vectorstore, metadata, project_id, vm)
+        else:
+            future = ex.submit(agent.detect, metadata)
+        result = future.result(timeout=PIPELINE_DETECTION_TIMEOUT_SECONDS)
     except FuturesTimeoutError:
-        result = {
-            "pipelines": [
-                {
-                    "id": "default_pipeline",
-                    "name": "Default Project Pipeline",
-                    "description": "Detection timed out. Using a default pipeline so you can continue.",
-                    "type": "other",
-                    "confidence": 0.3,
-                    "explainability": {
-                        "keywords": [],
-                        "orchestration_clues": [],
-                        "evidence_files": [],
-                        "evidence_tables": [],
-                    },
-                    "source_files": [],
-                    "source_tables": [],
-                    "technologies": [],
-                }
-            ],
-            "count": 1,
-            "summary": "Detection timed out; fallback pipeline returned.",
-        }
+        # Important: do not block waiting for executor shutdown after timeout.
+        # Instead of returning a useless dummy, run the instant path-only heuristic
+        # on the already-fetched file tree — produces real pipeline names with no API calls.
+        if future is not None:
+            future.cancel()
+        ex.shutdown(wait=False, cancel_futures=True)
+        logger.warning("Pipeline detection timed out for project %s — falling back to path-only heuristics", project_id)
+        try:
+            all_tree_paths = [
+                f["path"]
+                for f in (metadata.get("structure", {}).get("files", []) or [])
+            ]
+            fallback_pipelines = agent._detect_from_paths_only(all_tree_paths)
+        except Exception as _fb_exc:
+            logger.warning("Path-only fallback also failed: %s", _fb_exc)
+            fallback_pipelines = []
+        if fallback_pipelines:
+            result = {
+                "pipelines": fallback_pipelines,
+                "count": len(fallback_pipelines),
+                "summary": (
+                    f"LLM detection timed out. {len(fallback_pipelines)} pipelines detected "
+                    f"from file-path patterns ({len(all_tree_paths)} tree paths scanned). "
+                    "Re-run detection to get full LLM descriptions."
+                ),
+            }
+        else:
+            result = {
+                "pipelines": [
+                    {
+                        "id": "default_pipeline",
+                        "name": "Default Project Pipeline",
+                        "description": "Detection timed out and no file tree was available. Add sources and retry.",
+                        "type": "other",
+                        "confidence": 0.3,
+                        "explainability": {"keywords": [], "orchestration_clues": [], "evidence_files": [], "evidence_tables": []},
+                        "source_files": [],
+                        "source_tables": [],
+                        "technologies": [],
+                    }
+                ],
+                "count": 1,
+                "summary": "Detection timed out; fallback pipeline returned.",
+            }
     except Exception as exc:
         logger.exception("Pipeline detection failed for project %s: %s", project_id, exc)
+        ex.shutdown(wait=False, cancel_futures=True)
         result = {
             "pipelines": [
                 {
@@ -1954,6 +2003,8 @@ async def pipeline_step_detect_pipelines(project_id: str):
             "count": 1,
             "summary": "Detection failed; fallback pipeline returned.",
         }
+    else:
+        ex.shutdown(wait=True)
 
     # Persist detected pipelines in pipeline state
     normalized_pipelines = [
@@ -2016,6 +2067,48 @@ async def pipeline_reset_pipelines(project_id: str):
         "pipelines": restored,
         "selected_pipeline": state.get("selected_pipeline"),
     }
+
+
+@router.post("/projects/{project_id}/pipeline/save-catalog")
+async def pipeline_save_catalog(project_id: str):
+    """
+    Save a snapshot of the current detected_pipelines into the project catalog.
+    The catalog preserves pipelines across re-detections so they can be browsed
+    and selected from the project workspace.
+    """
+    p = _projects.get(project_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    state = _pipeline_state.get(project_id, {})
+    pipelines = state.get("detected_pipelines", [])
+    if not pipelines:
+        raise HTTPException(status_code=400, detail="No detected pipelines to save")
+
+    snapshot = {
+        "id": _new_id(),
+        "saved_at": _now(),
+        "count": len(pipelines),
+        "pipelines": pipelines,
+    }
+    # Store as a list of snapshots so we don't overwrite previous saves
+    catalog = state.setdefault("pipeline_catalog", [])
+    catalog.append(snapshot)
+    _persist_state()
+    return {"snapshot_id": snapshot["id"], "saved_at": snapshot["saved_at"], "count": snapshot["count"]}
+
+
+@router.get("/projects/{project_id}/pipeline/catalog")
+async def pipeline_get_catalog(project_id: str):
+    """
+    Return the pipeline catalog for a project (all saved snapshots).
+    Each snapshot has: id, saved_at, count, pipelines[].
+    """
+    p = _projects.get(project_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+    state = _pipeline_state.get(project_id, {})
+    catalog = state.get("pipeline_catalog", [])
+    return {"catalog": catalog}
 
 
 @router.post("/projects/{project_id}/pipeline/update-pipelines")
@@ -2915,13 +3008,61 @@ async def project_chat(project_id: str, req: ProjectChatRequest, db=Depends(get_
     # Build live data source context (real schemas, tables, files from connected sources)
     live_datasource_context = _build_datasource_context()
 
+    # ── Build a human-readable pipeline inventory for injection ──────────────
+    detected_pipelines = state.get("detected_pipelines") or []
+    if detected_pipelines:
+        pipeline_lines = []
+        for pl in detected_pipelines:
+            name = pl.get("name") or pl.get("id") or "?"
+            cat = pl.get("category") or "other"
+            exec_mode = pl.get("execution_mode") or pl.get("type") or "?"
+            desc = pl.get("description") or ""
+            files = ", ".join((pl.get("source_files") or [])[:3])
+            techs = ", ".join(pl.get("technologies") or [])
+            queues = ", ".join(
+                q.get("name", "") for q in (pl.get("queues") or []) if isinstance(q, dict)
+            )
+            triggers = ", ".join(
+                t.get("detail", t.get("type", "")) for t in (pl.get("triggers") or []) if isinstance(t, dict)
+            )
+            line = f"  • [{cat}] {name} — mode:{exec_mode}"
+            if desc:
+                line += f" | {desc[:150]}"
+            if techs:
+                line += f" | techs:{techs}"
+            if queues:
+                line += f" | queues:{queues}"
+            if triggers:
+                line += f" | triggers:{triggers}"
+            if files:
+                line += f" | files:{files}"
+            pipeline_lines.append(line)
+        pipelines_context = (
+            f"DETECTED PIPELINES ({len(detected_pipelines)} total):\n" + "\n".join(pipeline_lines)
+        )
+    else:
+        pipelines_context = "No pipelines have been detected yet for this project."
+
+    selected_pipeline = state.get("selected_pipeline")
+    selected_context = ""
+    if selected_pipeline:
+        selected_context = (
+            f"CURRENTLY SELECTED PIPELINE: {selected_pipeline.get('name')} "
+            f"[{selected_pipeline.get('category')}] — {selected_pipeline.get('description') or ''}"
+        )
+
     # Build system prompt with full pipeline context
     system_parts = [
         "You are a helpful data engineering assistant for a spec-generation platform called Jems Spec Generator.",
-        "You have access to the real schemas, tables, and content of the connected data sources listed below.",
-        "Use this information to answer questions precisely — reference actual table names, column names, and data structures when relevant.",
+        "You have FULL knowledge of the detected pipelines listed below — always use this list to answer pipeline questions.",
+        "When the user asks about pipelines by category, name, technology, or flux, scan the DETECTED PIPELINES list and answer with specifics.",
         f"Current project: {p.name}",
         f"Project description: {p.description or 'N/A'}",
+        pipelines_context,
+    ]
+    if selected_context:
+        system_parts.append(selected_context)
+    system_parts += [
         f"Connected sources (project config):\n{sources_text}",
         f"Live data source context (real schemas and content):\n{live_datasource_context}",
         f"Current pipeline step: {req.pipeline_step or state.get('step', 'none')}",
@@ -2935,7 +3076,10 @@ async def project_chat(project_id: str, req: ProjectChatRequest, db=Depends(get_
     if state.get("spec"):
         system_parts.append(f"Current spec preview (first 2000 chars):\n{state['spec'][:2000]}")
 
-    system_parts.append("Answer concisely. If you can reference specific source content, do so and tag your answer as [from sources]. Otherwise tag as [general].")
+    system_parts.append(
+        "When answering about detected pipelines, reference the DETECTED PIPELINES list above — names, categories, and descriptions are your source of truth. "
+        "If your answer comes from the DETECTED PIPELINES list or the connected data sources, tag as [from sources]. Otherwise tag as [general]."
+    )
 
     system_prompt = "\n\n".join(system_parts)
 

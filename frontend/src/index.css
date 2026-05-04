@@ -2,10 +2,12 @@
    SPEC GENERATOR — JEMS Edition
    ========================================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;1,9..40,400&display=swap');
+
 /* ========== CSS VARIABLES — DARK (default) ========== */
 :root {
   /* Background layers */
-  --bg-deep: #020818;
+  --bg-deep: #0b0b14;
   --bg-surface: rgba(255, 255, 255, 0.025);
   --bg-surface-hover: rgba(255, 255, 255, 0.05);
   --bg-elevated: rgba(255, 255, 255, 0.04);
@@ -22,11 +24,11 @@
   --text-tertiary: #4a5568;
   --text-heading: #f0f4f8;
 
-  /* Accent — JEMS warm coral */
-  --accent: #e8607a;
-  --accent-dim: rgba(232, 96, 122, 0.12);
-  --accent-glow: rgba(232, 96, 122, 0.08);
-  --accent-light: #f0926e;
+  /* Accent — JEMS magenta-pink */
+  --accent: #e91e8c;
+  --accent-dim: rgba(233, 30, 140, 0.12);
+  --accent-glow: rgba(233, 30, 140, 0.08);
+  --accent-light: #ff6f00;
 
   /* Status */
   --success: #34d399;
@@ -36,13 +38,13 @@
   --warning: #fbbf24;
 
   /* Sidebar / Chat panel backgrounds */
-  --sidebar-bg: linear-gradient(180deg, rgba(8, 15, 35, 0.95), rgba(4, 10, 25, 0.98));
-  --chat-bg: linear-gradient(180deg, rgba(8, 15, 35, 0.97), rgba(4, 10, 25, 0.99));
-  --sidebar-edge-glow: linear-gradient(180deg, transparent, rgba(232, 96, 122, 0.12) 30%, rgba(232, 96, 122, 0.2) 50%, rgba(232, 96, 122, 0.12) 70%, transparent);
+  --sidebar-bg: linear-gradient(180deg, rgba(18, 8, 30, 0.97), rgba(11, 11, 20, 0.99));
+  --chat-bg: linear-gradient(180deg, rgba(18, 8, 30, 0.98), rgba(11, 11, 20, 1));
+  --sidebar-edge-glow: linear-gradient(180deg, transparent, rgba(233, 30, 140, 0.15) 30%, rgba(255, 111, 0, 0.2) 50%, rgba(233, 30, 140, 0.15) 70%, transparent);
   --brand-icon-text: #020818;
 
   /* JEMS brand gradient */
-  --jems-gradient: linear-gradient(135deg, #ffd93d, #ff8c42, #e8607a);
+  --jems-gradient: linear-gradient(105deg, #2a1a4e 0%, #7b1fa2 25%, #e91e8c 55%, #ff6f00 85%, #ffab40 100%);
 
   /* Spacing */
   --sidebar-width: 250px;
@@ -58,8 +60,8 @@
   --transition-slow: 0.5s var(--ease-out);
 
   /* Fonts */
-  --font-display: "Syne", sans-serif;
-  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Syne', sans-serif;
+  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* ========== CSS VARIABLES — LIGHT ========== */
@@ -95,7 +97,7 @@
   --sidebar-edge-glow: linear-gradient(180deg, transparent, rgba(201, 78, 100, 0.06) 30%, rgba(201, 78, 100, 0.1) 50%, rgba(201, 78, 100, 0.06) 70%, transparent);
   --brand-icon-text: #ffffff;
 
-  --jems-gradient: linear-gradient(135deg, #e8a020, #e06830, #c94e64);
+  --jems-gradient: linear-gradient(105deg, #2a1a4e 0%, #7b1fa2 25%, #e91e8c 55%, #ff6f00 85%, #ffab40 100%);
 }
 
 /* ========== LIGHT MODE — Element Overrides ========== */
@@ -306,9 +308,9 @@
   border-color: rgba(0, 0, 0, 0.08);
 }
 [data-theme="light"] .sidebar nav button.active {
-  background-color: rgba(201, 78, 100, 0.08);
+  background-color: rgba(233, 30, 140, 0.08);
   color: var(--accent);
-  border-color: rgba(201, 78, 100, 0.15);
+  border-color: rgba(233, 30, 140, 0.15);
 }
 [data-theme="light"] .sidebar nav button:active {
   background-color: rgba(0, 0, 0, 0.08) !important;
@@ -624,7 +626,7 @@ body::after {
 .sidebar nav button.active {
   background-color: var(--accent-dim);
   color: var(--accent);
-  border-color: rgba(232, 96, 122, 0.12);
+  border-color: rgba(233, 30, 140, 0.15);
 }
 
 .sidebar nav button.active::before {
