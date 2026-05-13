@@ -3,7 +3,7 @@ import { getProject } from '../api'
 
 const ProjectContext = createContext(null)
 
-const STEPS = ['pipelines', 'template', 'extraction', 'mapping', 'export']
+const STEPS = ['pipelines', 'extraction', 'mapping', 'diagram', 'export']
 
 const initialState = {
   // Navigation
@@ -17,17 +17,19 @@ const initialState = {
   // Pipeline detection (step 0)
   detectedPipelines: [],
   selectedPipeline: null,     // the pipeline dict the user chose
-  // Template (step 1)
+  // Template — set at project level BEFORE launching pipeline
+  templateReady: false,
   templateTitle: '',
   placeholders: [],
-  // Extraction (step 2)
+  // Extraction (step 1)
   extractionResults: [],
   confirmedValues: {},
-  // Mapping / Export (steps 3-4)
+  // Mapping / Diagram / Export (steps 2-4)
   spec: '',
   validation: null,
   specVersions: [],
   approvedVersionId: null,
+  diagramCode: '',
   // Chat
   chatOpen: false,
   chatHistory: [],
@@ -47,25 +49,36 @@ function reducer(state, action) {
         gates: [false, false, false, false],
         detectedPipelines: [],
         selectedPipeline: null,
-        templateTitle: '',
-        placeholders: [],
+        // Template kept — configured at project level before launch
         extractionResults: [],
         confirmedValues: {},
         spec: '',
         validation: null,
         specVersions: [],
         approvedVersionId: null,
+        diagramCode: '',
         chatHistory: [],
       }
     case 'SET_PROJECT':
       return { ...state, project: action.payload }
     case 'CLOSE_PROJECT':
       return { ...initialState, currentPage: 'projects' }
+    // Set template at project level (in ProjectWorkspace, before pipeline launch)
+    case 'SET_PROJECT_TEMPLATE':
+      return {
+        ...state,
+        templateTitle: action.payload.template_title || '',
+        placeholders: action.payload.placeholders || [],
+        templateReady: true,
+      }
+    // Clear template when switching projects
+    case 'CLEAR_PROJECT_TEMPLATE':
+      return { ...state, templateTitle: '', placeholders: [], templateReady: false }
 
     // Pipeline
     case 'SET_PIPELINE_STEP':
       return { ...state, pipelineStep: action.payload }
-    // Load a pipeline (or merged set) from the catalog, skip detection, go to template
+    // Load a pipeline (or merged set) from the catalog, skip detection, go to extraction
     case 'LOAD_FROM_CATALOG': {
       const { project, pipelines, selectedPipeline } = action.payload
       return {
@@ -77,14 +90,14 @@ function reducer(state, action) {
         gates: [true, false, false, false],
         detectedPipelines: pipelines,
         selectedPipeline,
-        templateTitle: '',
-        placeholders: [],
+        // Template kept — configured at project level before launch
         extractionResults: [],
         confirmedValues: {},
         spec: '',
         validation: null,
         specVersions: [],
         approvedVersionId: null,
+        diagramCode: '',
         chatHistory: [],
       }
     }
@@ -97,7 +110,7 @@ function reducer(state, action) {
         ...state,
         templateTitle: action.payload.template_title || '',
         placeholders: action.payload.placeholders || [],
-        pipelineStep: 1,
+        templateReady: true,
       }
     case 'UPDATE_PLACEHOLDERS':
       return { ...state, placeholders: action.payload }
@@ -105,6 +118,11 @@ function reducer(state, action) {
       const gates = [...state.gates]
       gates[action.payload] = true
       return { ...state, gates, pipelineStep: action.payload + 1 }
+    }
+    case 'UNCONFIRM_GATE': {
+      const gates = [...state.gates]
+      gates[action.payload] = false
+      return { ...state, gates }
     }
     case 'SET_EXTRACTION_RESULTS':
       return { ...state, extractionResults: action.payload }
@@ -119,6 +137,8 @@ function reducer(state, action) {
           ? [...state.specVersions, action.payload.version]
           : state.specVersions,
       }
+    case 'SET_DIAGRAM':
+      return { ...state, diagramCode: action.payload }
     case 'SET_SPEC_VERSIONS':
       return { ...state, specVersions: action.payload }
     case 'SET_APPROVED_VERSION':

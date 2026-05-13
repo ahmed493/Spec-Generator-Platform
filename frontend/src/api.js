@@ -74,6 +74,13 @@ export const detectPipelines = (repoList) => {
 export const chat = (question, repoName = null) =>
   api.post('/chat', { question, repo_name: repoName })
 
+// ================= PLACEHOLDER PRESETS =================
+export const getPlaceholderPresets = () => api.get('/placeholder-presets')
+export const savePlaceholderPreset = (name, placeholders) =>
+  api.post('/placeholder-presets', { name, placeholders })
+export const deletePlaceholderPreset = (presetId) =>
+  api.delete(`/placeholder-presets/${presetId}`)
+
 // ================= PROJECTS =================
 export const getProjects = () => api.get('/projects')
 export const createProject = (name, description = '') =>
@@ -90,6 +97,10 @@ export const addProjectSource = (projectId, type, label = '', config = {}) =>
 export const removeProjectSource = (projectId, sourceId) =>
   api.delete(`/projects/${projectId}/sources/${sourceId}`)
 export const getSourceTypes = () => api.get('/source-types')
+export const uploadProjectFile = (projectId, formData) =>
+  axios.post(`${API_BASE}/projects/${projectId}/sources/upload-file`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 export const getProjectApprovedSpecs = (projectId) =>
   api.get(`/projects/${projectId}/approved-specs`)
 
@@ -130,6 +141,8 @@ export const pipelineExtract = (projectId, placeholders) =>
   api.post(`/projects/${projectId}/pipeline/extract`, { placeholders })
 export const pipelineMap = (projectId, values) =>
   api.post(`/projects/${projectId}/pipeline/map`, { values })
+export const pipelineDiagram = (projectId) =>
+  api.post(`/projects/${projectId}/pipeline/diagram`)
 export const pipelineExport = (projectId, format = 'markdown') =>
   api.post(`/projects/${projectId}/pipeline/export`, { format })
 export const pipelineGetState = (projectId) =>

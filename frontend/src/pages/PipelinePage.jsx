@@ -1,9 +1,9 @@
 import { useProject } from '../context/ProjectContext'
 import StepProgressBar from '../components/StepProgressBar'
 import PipelineDetectionStep from './steps/PipelineDetectionStep'
-import TemplateStep from './steps/TemplateStep'
 import ExtractionStep from './steps/ExtractionStep'
 import MappingStep from './steps/MappingStep'
+import DiagramStep from './steps/DiagramStep'
 import ExportStep from './steps/ExportStep'
 
 export default function PipelinePage() {
@@ -15,9 +15,9 @@ export default function PipelinePage() {
   const renderStep = () => {
     switch (pipelineStep) {
       case 0: return <PipelineDetectionStep />
-      case 1: return <TemplateStep />
-      case 2: return <ExtractionStep />
-      case 3: return <MappingStep />
+      case 1: return <ExtractionStep />
+      case 2: return <MappingStep />
+      case 3: return <DiagramStep />
       case 4: return <ExportStep />
       default: return <PipelineDetectionStep />
     }

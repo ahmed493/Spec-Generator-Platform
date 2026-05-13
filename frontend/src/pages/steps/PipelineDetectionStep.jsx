@@ -33,7 +33,7 @@ const TypeBadge = ({ type }) => {
 const Tag = ({ label }) => (
   <span style={{
     fontSize: '10px', padding: '2px 7px', borderRadius: '4px',
-    background: 'rgba(255,255,255,.06)', color: 'var(--text-secondary)',
+    background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
     border: '1px solid var(--border)',
   }}>{label}</span>
 )
@@ -365,9 +365,9 @@ export default function PipelineDetectionStep() {
 
       {!loading && pipelines.length > 0 && (
         <>
-          <div style={{ marginBottom: '12px', fontSize: '13px', color: 'rgba(255,255,255,0.5)', fontFamily: 'var(--jw-body)' }}>
+          <div style={{ marginBottom: '12px', fontSize: '13px', color: 'var(--text-secondary)', fontFamily: 'var(--jw-body)' }}>
             <Layers size={14} style={{ verticalAlign: 'middle', marginRight: '6px' }} />
-            <strong style={{ color: '#ffffff' }}>{pipelines.length}</strong> pipeline{pipelines.length !== 1 ? 's' : ''} detected.
+            <strong style={{ color: 'var(--text-heading)' }}>{pipelines.length}</strong> pipeline{pipelines.length !== 1 ? 's' : ''} detected.
             Review, edit, then select one to generate the spec.
           </div>
 
@@ -438,7 +438,7 @@ export default function PipelineDetectionStep() {
                     {modes.map(m => <option key={m} value={m}>{m === 'all' ? 'All modes' : m}</option>)}
                   </select>
                   {(searchQuery || filterCategory !== 'all' || filterMode !== 'all') && (
-                    <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--jw-body)' }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-tertiary)', fontFamily: 'var(--jw-body)' }}>
                       {filtered.length} / {pipelines.length}
                     </span>
                   )}
@@ -501,7 +501,7 @@ export default function PipelineDetectionStep() {
                       onClick={e => e.stopPropagation()}
                       onBlur={() => persistPipelines(pipelines)}
                       className="jw-card-name"
-                      style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, padding: '4px 10px', outline: 'none' }}
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px', outline: 'none', color: 'var(--text-primary)' }}
                     />
                     <span className={source === 'manual' ? 'jw-badge-manual' : 'jw-badge-detected'}>
                       {source === 'manual' ? 'Manual' : 'Detected'}
@@ -522,15 +522,15 @@ export default function PipelineDetectionStep() {
                   {isExpanded && (
                     <div className={`jw-card-body ${isExpanded ? 'open' : ''}`} style={{ maxHeight: isExpanded ? '800px' : '0' }}>
                       <div className="jw-card-body-inner">
-                        <p style={{ color: 'rgba(255,255,255,0.55)', margin: 0, fontSize: 13, fontFamily: 'var(--jw-body)' }}>{pipeline.description}</p>
+                        <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 13, fontFamily: 'var(--jw-body)' }}>{pipeline.description}</p>
 
                         {/* Origin + Confidence + Execution Mode + Launcher */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', fontSize: '12px', fontFamily: 'var(--jw-body)', color: 'rgba(255,255,255,0.7)' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '14px', fontSize: '12px', fontFamily: 'var(--jw-body)', color: 'var(--text-secondary)' }}>
                           <div><strong>Origin:</strong> {getPipelineSource(pipeline) === 'manual' ? 'Manually added' : 'AI detected'}</div>
                           <div><strong>Confidence:</strong> {confidencePct}%</div>
                           {pipeline.execution_mode && <div><strong>Execution:</strong> <span className="jw-badge-detected">{pipeline.execution_mode}</span></div>}
                           {pipeline.launcher && pipeline.launcher !== 'unknown' && <div><strong>Launcher:</strong> <span className="jw-badge-command">{pipeline.launcher}</span></div>}
-                          {pipeline.parent_pipeline && <div><strong>Parent:</strong> <span style={{ color: 'rgba(255,255,255,0.4)' }}>{pipeline.parent_pipeline}</span></div>}
+                          {pipeline.parent_pipeline && <div><strong>Parent:</strong> <span style={{ color: 'var(--text-tertiary)' }}>{pipeline.parent_pipeline}</span></div>}
                         </div>
 
                       {/* Triggers */}
@@ -541,7 +541,7 @@ export default function PipelineDetectionStep() {
                             {pipeline.triggers.map((t, i) => (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
                                 <span className="jw-badge-detected">{t.type || 'trigger'}</span>
-                                {t.detail && <span style={{ color: 'rgba(255,255,255,0.45)' }}>{t.detail}</span>}
+                                {t.detail && <span style={{ color: 'var(--text-tertiary)' }}>{t.detail}</span>}
                               </div>
                             ))}
                           </div>
@@ -556,7 +556,7 @@ export default function PipelineDetectionStep() {
                             {pipeline.listen_mode.map((lm, i) => (
                               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
                                 <span className="jw-badge-manual">{lm.type || 'listener'}</span>
-                                {lm.detail && <span style={{ color: 'rgba(255,255,255,0.45)' }}>{lm.detail}</span>}
+                                {lm.detail && <span style={{ color: 'var(--text-tertiary)' }}>{lm.detail}</span>}
                               </div>
                             ))}
                           </div>
@@ -569,9 +569,9 @@ export default function PipelineDetectionStep() {
                           <div className="jw-section-label">📨 Queues / Topics</div>
                           <div className="jw-detail-tags">
                             {pipeline.queues.map((q, i) => (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '3px 9px', fontSize: '11px' }}>
-                                <span style={{ fontWeight: 600, color: '#ffffff' }}>{q.name}</span>
-                                {q.technology && <span style={{ color: 'rgba(255,255,255,0.4)' }}>{q.technology}</span>}
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: '8px', padding: '3px 9px', fontSize: '11px' }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-heading)' }}>{q.name}</span>
+                                {q.technology && <span style={{ color: 'var(--text-tertiary)' }}>{q.technology}</span>}
                                 {q.role && <span className={q.role === 'input' ? 'jw-badge-detected' : q.role === 'output' ? 'jw-badge-manual' : 'jw-badge-command'}>{q.role}</span>}
                               </div>
                             ))}
@@ -585,12 +585,12 @@ export default function PipelineDetectionStep() {
                           <div className="jw-section-label">⚙️ Jobs / Tasks ({pipeline.jobs.length})</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             {pipeline.jobs.map((job, i) => (
-                              <div key={job.id || i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: 'rgba(255,255,255,.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.3)', minWidth: '18px', fontFamily: 'var(--jw-mono)', fontSize: 11 }}>{job.order ?? i + 1}.</span>
+                              <div key={job.id || i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: '8px', padding: '7px 12px', fontSize: '12px' }}>
+                                <span style={{ color: 'var(--text-tertiary)', minWidth: '18px', fontFamily: 'var(--jw-mono)', fontSize: 11 }}>{job.order ?? i + 1}.</span>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1 }}>
-                                  <span style={{ fontWeight: 700, color: '#ffffff' }}>{job.name || job.id}</span>
+                                  <span style={{ fontWeight: 700, color: 'var(--text-heading)' }}>{job.name || job.id}</span>
                                   {job.file && <span className="jw-filepath">{job.file}</span>}
-                                  {job.description && <span style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{job.description}</span>}
+                                  {job.description && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{job.description}</span>}
                                 </div>
                               </div>
                             ))}
@@ -609,7 +609,7 @@ export default function PipelineDetectionStep() {
                       )}
 
                       {/* Keywords + Orchestration clues */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', fontFamily: 'var(--jw-body)', color: 'rgba(255,255,255,0.6)' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '12px', fontFamily: 'var(--jw-body)', color: 'var(--text-secondary)' }}>
                         {explain.keywords?.length > 0 && <div><strong>Keywords:</strong> {explain.keywords.join(', ')}</div>}
                         {explain.orchestration_clues?.length > 0 && <div><strong>Orchestration clues:</strong> {explain.orchestration_clues.join(', ')}</div>}
                       </div>
@@ -663,7 +663,7 @@ export default function PipelineDetectionStep() {
       )}
 
       {!loading && pipelines.length === 0 && !error && (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.4)', fontFamily: 'var(--jw-body)' }}>
+        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-tertiary)', fontFamily: 'var(--jw-body)' }}>
           <div style={{ marginBottom: '8px', fontSize: '14px' }}>No pipelines detected yet.</div>
           <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap', marginTop: '12px' }}>
             <button className="jw-btn-primary" onClick={runDetection} disabled={loading}>

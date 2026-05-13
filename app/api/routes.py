@@ -112,6 +112,7 @@ _restore_connections()
 # ============== PERSISTENT PROJECT STORE ==============
 
 _PROJECTS_FILE = _pathlib.Path(__file__).parent.parent / ".projects_cache.json"
+_PRESETS_FILE  = _pathlib.Path(__file__).parent.parent / ".placeholder_presets.json"
 
 _projects: dict = {}        # id -> project dict
 _pipeline_state: dict = {}  # project_id -> pipeline detection state (pre-declared for load)
@@ -2030,6 +2031,8 @@ async def pipeline_step_detect_pipelines(project_id: str):
     ]
     if filtered_pipelines and not _pipeline_state[project_id].get("selected_pipeline"):
         _pipeline_state[project_id]["selected_pipeline"] = filtered_pipelines[0]
+    # Store repo metadata so the extraction step can reuse the already-fetched file content
+    _pipeline_state[project_id]["repo_metadata"] = metadata
 
     _persist_state()
     return result
@@ -2354,27 +2357,103 @@ async def pipeline_step_extract(
     state["placeholders"] = req.placeholders
     state["step"] = "extract"
 
-    # Gather source content as a pseudo-metadata dict
-    source_content = _get_source_content_for_project(project_id, db)
+    # Reuse repo metadata (with actual file content) from the detection step if available
+    if state.get("repo_metadata"):
+        metadata = dict(state["repo_metadata"])
+    else:
+        # Fallback: build minimal metadata from source content
+        source_content = _get_source_content_for_project(project_id, db)
+        metadata = {
+            "repo_name": p.name,
+            "owner": "",
+            "description": p.description or "",
+            "readme": source_content,
+            "languages": "",
+            "topics": "",
+            "structure": {},
+            "sql_files": [],
+            "python_files": [],
+            "yaml_files": [],
+            "json_files": [],
+            "notebook_files": [],
+        }
 
-    # Build live data source schema context from all connected sources
+    # ── Enrich with live GitHub file fetch if cache is thin ──────────────────
+    # Measure total content chars across all file buckets
+    def _total_content_chars(files: list) -> int:
+        return sum(len(f.get("content") or "") for f in files if isinstance(f, dict))
+
+    total_chars = sum(
+        _total_content_chars(metadata.get(k, []))
+        for k in ("python_files", "sql_files", "yaml_files", "json_files", "notebook_files", "code_files")
+    )
+    # Re-fetch if cache has less than 20 KB of actual code content
+    gh = connections.get("github")
+    if total_chars < 20_000 and gh and metadata.get("owner") and metadata.get("repo_name"):
+        logger.info(
+            "Extraction: only %d chars of content in cache — running live GitHub fetch for %s/%s",
+            total_chars, metadata["owner"], metadata["repo_name"],
+        )
+        try:
+            from app.agents.github_file_fetcher import fetch_repo_files, merge_fetched_into_metadata
+            fetched = fetch_repo_files(
+                owner=metadata["owner"],
+                repo=metadata["repo_name"],
+                token=gh.token,
+            )
+            metadata = merge_fetched_into_metadata(metadata, fetched)
+            # Persist enriched metadata so next extraction is fast
+            state["repo_metadata"] = metadata
+            _persist_state()
+        except Exception as _fetch_exc:
+            logger.warning("Live GitHub fetch failed during extraction: %s", _fetch_exc)
+
+    # ── Top-up: ensure pipeline evidence files are always fetched ────────────
+    # The general fetcher has per-category caps; evidence files identified during
+    # pipeline detection may have been skipped.  Fetch them explicitly so the
+    # extraction LLM always has the most relevant files in context.
+    selected_pipeline_early = state.get("selected_pipeline") or {}
+    evidence_paths: list[str] = list({
+        *selected_pipeline_early.get("source_files", []),
+        *(selected_pipeline_early.get("explainability") or {}).get("evidence_files", []),
+    })
+    if evidence_paths and gh and metadata.get("owner") and metadata.get("repo_name"):
+        # Collect paths already fetched to avoid duplicates
+        already_fetched: set[str] = set()
+        for k in ("python_files", "sql_files", "yaml_files", "json_files", "notebook_files", "code_files"):
+            for f in metadata.get(k, []):
+                if isinstance(f, dict) and f.get("path"):
+                    already_fetched.add(f["path"].lower())
+
+        missing_paths = [p for p in evidence_paths if p.lower() not in already_fetched]
+        if missing_paths:
+            logger.info(
+                "Extraction top-up: fetching %d missing evidence files: %s",
+                len(missing_paths), missing_paths,
+            )
+            try:
+                topup = gh.fetch_files_by_paths(
+                    owner=metadata["owner"],
+                    repo_name=metadata["repo_name"],
+                    paths=missing_paths,
+                )
+                if topup:
+                    # Prepend evidence files so they appear BEFORE the cap boundary
+                    # (ExtractionAgent sorts by evidence key, but prepending ensures
+                    # they are visible even before sorting is applied)
+                    py_evidence = [f for f in topup if f["path"].endswith(".py")]
+                    other_evidence = [f for f in topup if not f["path"].endswith(".py")]
+                    py = py_evidence + list(metadata.get("python_files", []))
+                    other = other_evidence + list(metadata.get("code_files", []))
+                    metadata = {**metadata, "python_files": py, "code_files": other}
+                    logger.info("Extraction top-up: injected %d evidence files into metadata", len(topup))
+            except Exception as _topup_exc:
+                logger.warning("Evidence file top-up failed: %s", _topup_exc)
+
+    # Always overlay fresh live datasource schema context
     datasource_context = _build_datasource_context()
-
-    metadata = {
-        "repo_name": p.name,
-        "owner": "",
-        "description": p.description or "",
-        "readme": source_content,
-        "languages": "",
-        "topics": "",
-        "structure": {},
-        "sql_files": [],
-        "python_files": [],
-        "yaml_files": [],
-        "json_files": [],
-        "notebook_files": [],
-        "datasource_context": datasource_context,
-    }
+    if datasource_context:
+        metadata["datasource_context"] = datasource_context
 
     selected_pipeline = state.get("selected_pipeline")
     if selected_pipeline:
@@ -2386,7 +2465,7 @@ async def pipeline_step_extract(
         ).strip()
 
     from app.agents.extraction_agent import ExtractionAgent
-    agent = ExtractionAgent()
+    agent = ExtractionAgent(mcp_client=connections.get("github"))
     extracted = agent.extract(metadata, req.placeholders)
 
     # Build per-field result with confidence heuristic
@@ -2395,9 +2474,22 @@ async def pipeline_step_extract(
         fid = field["id"]
         value = extracted.get(fid, "")
         lower_val = value.strip().lower() if value else ""
-        if not lower_val or lower_val in ("non identifié", "n/a", ""):
+        # Use same NOT_FOUND detection as ExtractionAgent
+        _NOT_FOUND_TERMS = {
+            "not_found", "not found", "non trouvé", "non trouve",
+            "non identifié", "non identifie", "n/a", "na",
+            "introuvable", "absent", "not available", "not present",
+            "not specified", "not mentioned", "no information",
+        }
+        is_not_found = (
+            not lower_val
+            or lower_val in _NOT_FOUND_TERMS
+            or lower_val.startswith("not_found")
+            or lower_val.startswith("not found")
+        )
+        if is_not_found:
             confidence = "low"
-        elif len(value.strip()) < 10:
+        elif len(value.strip()) < 20:
             confidence = "medium"
         else:
             confidence = "high"
@@ -2815,6 +2907,63 @@ async def embed_github_repository(
     }
 
 
+@router.post("/projects/{project_id}/pipeline/diagram")
+async def pipeline_step_diagram(project_id: str, db=Depends(get_db)):
+    """Step 4 (Diagram): Generate a mermaid flowchart from extraction + pipeline data."""
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    state = _pipeline_state.get(project_id, {})
+    pipeline = state.get("selected_pipeline") or {}
+    confirmed_values: dict = state.get("confirmed_values") or {}
+    placeholders: list = state.get("placeholders") or []
+    sources = p.sources if hasattr(p, "sources") else []
+
+    # ── Build mermaid flowchart from available data ──────────────────────────
+    lines = ["flowchart LR"]
+
+    # Source nodes
+    source_ids = []
+    for i, src in enumerate(sources):
+        nid = f"SRC{i}"
+        source_ids.append(nid)
+        lbl = (src.label or src.type_name or src.type)[:40]
+        lines.append(f'    {nid}["{lbl}"]')
+
+    # Pipeline / transform node
+    pipe_name = pipeline.get("name", "Pipeline") if pipeline else "Pipeline"
+    lines.append(f'    PIPE["{pipe_name[:40]}"]')
+
+    # Target / spec output node
+    lines.append('    SPEC["Generated Spec"]')
+
+    # Edges: sources → pipeline
+    for sid in source_ids:
+        lines.append(f"    {sid} --> PIPE")
+
+    # Edge: pipeline → spec
+    lines.append("    PIPE --> SPEC")
+
+    # Optionally show extracted key fields as sub-nodes
+    key_values = {k: v for k, v in confirmed_values.items() if v and len(str(v)) < 80}
+    if key_values and len(key_values) <= 8:
+        for i, (k, v) in enumerate(list(key_values.items())[:8]):
+            ph = next((p for p in placeholders if p.get("id") == k), None)
+            label = ph.get("label", k) if ph else k
+            nid = f"VAL{i}"
+            lines.append(f'    {nid}(("{label[:25]}"))')
+            lines.append(f"    PIPE --> {nid}")
+            lines.append(f"    {nid} --> SPEC")
+
+    # Styles
+    lines.append("    style PIPE fill:#FF2D78,color:#fff,stroke:none")
+    lines.append("    style SPEC fill:#6366f1,color:#fff,stroke:none")
+
+    mermaid_code = "\n".join(lines)
+
+    return {"mermaid": mermaid_code, "pipeline_name": pipe_name}
+
 
 @router.post("/projects/{project_id}/pipeline/export")
 async def pipeline_step_export(project_id: str, req: ExportRequest, db=Depends(get_db)):
@@ -3103,6 +3252,55 @@ async def project_chat(project_id: str, req: ProjectChatRequest, db=Depends(get_
     }
 
 
+# ============== PLACEHOLDER PRESETS ==============
+
+def _load_presets() -> list:
+    try:
+        if _PRESETS_FILE.exists():
+            return json.loads(_PRESETS_FILE.read_text())
+    except Exception:
+        pass
+    return []
+
+def _save_presets(presets: list) -> None:
+    try:
+        _PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False))
+    except Exception as exc:
+        logger.warning("Could not save presets: %s", exc)
+
+class SavePresetRequest(BaseModel):
+    name: str
+    placeholders: list
+
+@router.get("/placeholder-presets")
+async def list_presets():
+    return {"presets": _load_presets()}
+
+@router.post("/placeholder-presets")
+async def save_preset(req: SavePresetRequest):
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Preset name is required")
+    presets = _load_presets()
+    preset = {
+        "id": _uuid.uuid4().hex[:10],
+        "name": req.name.strip(),
+        "placeholders": req.placeholders,
+        "created_at": _now(),
+    }
+    presets.insert(0, preset)
+    _save_presets(presets)
+    return preset
+
+@router.delete("/placeholder-presets/{preset_id}")
+async def delete_preset(preset_id: str):
+    presets = _load_presets()
+    filtered = [p for p in presets if p["id"] != preset_id]
+    if len(filtered) == len(presets):
+        raise HTTPException(status_code=404, detail="Preset not found")
+    _save_presets(filtered)
+    return {"ok": True}
+
+
 # ============== PROJECT ENDPOINTS ==============
 
 @router.get("/projects")
@@ -3252,18 +3450,18 @@ async def delete_project(project_id: str, db=Depends(get_db)):
 # ============== PROJECT SOURCE ENDPOINTS ==============
 
 SOURCE_TYPES = {
-    "github":     {"name": "GitHub Repo",   "icon": "github"},
-    "pdf":        {"name": "PDF File",      "icon": "file-text"},
-    "notion":     {"name": "Notion Page",   "icon": "book-open"},
-    "googledoc":  {"name": "Google Doc",    "icon": "file-spreadsheet"},
-    "text":       {"name": "Plain Text",    "icon": "align-left"},
-    "api":        {"name": "REST API",      "icon": "zap"},
-    "url":        {"name": "Web URL",       "icon": "globe"},
-    "database":   {"name": "DB Schema",     "icon": "database"},
-    "bigquery":   {"name": "BigQuery",      "icon": "database"},
-    "postgresql": {"name": "PostgreSQL",    "icon": "hard-drive"},
-    "powerbi":    {"name": "Power BI",      "icon": "bar-chart-3"},
-    "gcs":        {"name": "Cloud Storage", "icon": "cloud"},
+    "github":     {"name": "GitHub Repo",      "icon": "github"},
+    "pdf":        {"name": "PDF / Document",   "icon": "file-up"},
+    "notion":     {"name": "Notion Page",      "icon": "book-open"},
+    "googledoc":  {"name": "Google Doc",       "icon": "file-spreadsheet"},
+    "text":       {"name": "Plain Text",       "icon": "align-left"},
+    "api":        {"name": "REST API",         "icon": "zap"},
+    "url":        {"name": "Web URL",          "icon": "globe"},
+    "database":   {"name": "DB Schema",        "icon": "database"},
+    "bigquery":   {"name": "BigQuery",         "icon": "database"},
+    "postgresql": {"name": "PostgreSQL",       "icon": "hard-drive"},
+    "powerbi":    {"name": "Power BI",         "icon": "bar-chart-3"},
+    "gcs":        {"name": "Cloud Storage",    "icon": "cloud"},
 }
 
 
@@ -3344,6 +3542,90 @@ async def remove_source(project_id: str, source_id: str, db=Depends(get_db)):
         _persist_state()
 
     return {"ok": True}
+
+
+@router.post("/projects/{project_id}/sources/upload-file")
+async def upload_source_file(project_id: str, file: UploadFile = File(...), db=Depends(get_db)):
+    """Upload a local file (PDF, TXT, MD, CSV, DOCX) and add it as a source.
+    Parses the content and stores it in the source config."""
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    filename = file.filename or "uploaded_file"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    allowed = {"pdf", "txt", "md", "csv", "docx"}
+    if ext not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: .{ext}. Allowed: {', '.join(allowed)}")
+
+    raw = await file.read()
+    # Limit to 5 MB
+    if len(raw) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5 MB)")
+
+    content = ""
+    try:
+        if ext == "pdf":
+            import io as _io
+            import pdfplumber
+            with pdfplumber.open(_io.BytesIO(raw)) as pdf:
+                pages = [page.extract_text() or "" for page in pdf.pages]
+                content = "\n\n".join(pages).strip()
+        elif ext == "docx":
+            import io as _io
+            try:
+                import docx as _docx
+                doc = _docx.Document(_io.BytesIO(raw))
+                content = "\n".join(p.text for p in doc.paragraphs if p.text)
+            except ImportError:
+                content = raw.decode("utf-8", errors="replace")
+        else:
+            content = raw.decode("utf-8", errors="replace")
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not parse file: {exc}")
+
+    label = filename
+    config = {"filename": filename, "content": content[:50_000]}  # cap stored content
+
+    source = Source(
+        id=_uuid.uuid4().hex[:12],
+        project_id=project_id,
+        type="pdf",
+        type_name="PDF / Document",
+        icon="file-up",
+        label=label,
+        config=config,
+        status="connected",
+    )
+    db.add(source)
+    db.commit()
+    db.refresh(source)
+
+    # Keep in-memory dict in sync
+    if project_id in _projects:
+        _projects[project_id]["sources"].append({
+            "id": source.id,
+            "type": source.type,
+            "type_name": source.type_name,
+            "icon": source.icon,
+            "label": source.label,
+            "config": source.config or {},
+            "status": source.status,
+            "added_at": source.added_at.isoformat() if source.added_at else "",
+        })
+        _persist_state()
+
+    return {
+        "id": source.id,
+        "type": source.type,
+        "type_name": source.type_name,
+        "icon": source.icon,
+        "label": source.label,
+        "config": {"filename": filename, "content_length": len(content)},
+        "status": source.status,
+        "added_at": source.added_at.isoformat() if source.added_at else "",
+    }
 
 
 @router.get("/source-types")

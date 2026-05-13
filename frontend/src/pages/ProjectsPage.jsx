@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import {
   Plus, FolderOpen, Trash2, ArrowLeft, Zap, Loader2, X,
   CheckCircle, AlertCircle, Link2, FileText, Globe, AlignLeft,
   Github, Database, Cloud, BarChart3, HardDrive, BookOpen, FileSpreadsheet,
   Search, Unplug, ScrollText, Download, Copy, Check, BookMarked, Clock,
+  ChevronDown, ChevronRight, UploadCloud, FileUp, Pencil, Save,
 } from 'lucide-react'
 import {
   getProjects, createProject, deleteProject,
@@ -13,6 +14,9 @@ import {
   getGitHubRepos, getBigQueryDatasets, getPostgreSQLSchemas,
   getPowerBIWorkspaces, getGCSBuckets,
   pipelineGetCatalog,
+  uploadProjectFile,
+  pipelineTemplate,
+  getPlaceholderPresets, savePlaceholderPreset, deletePlaceholderPreset,
 } from '../api'
 import { useProject } from '../context/ProjectContext'
 
@@ -47,12 +51,14 @@ const SOURCE_TYPES = [
     itemLabel: i => i.name + (i.location ? ` (${i.location})` : ''),
     itemValue: i => ({ label: i.name, config: { bucket: i.name } }) },
   // ── Manual sources ──
-  { id: 'pdf',        name: 'PDF File',      icon: FileText,     bg: 'rgba(220,38,38,.14)',
-    fields: [{ id:'name', label:'File name or path', ph:'template.pdf' }] },
+  // ── File upload sources ──
+  { id: 'pdf',        name: 'PDF / Document', icon: FileUp,          bg: 'rgba(220,38,38,.14)',
+    fileUpload: true, accept: '.pdf,.txt,.md,.csv,.docx',
+    acceptLabel: 'PDF, TXT, Markdown, CSV, DOCX' },
   { id: 'notion',     name: 'Notion Page',   icon: BookOpen,     bg: 'rgba(55,65,81,.45)',
     fields: [{ id:'url', label:'Notion page URL', ph:'https://notion.so/…' }] },
   { id: 'googledoc',  name: 'Google Doc',    icon: FileSpreadsheet, bg: 'rgba(29,78,216,.14)',
-    fields: [{ id:'url', label:'Google Doc URL', ph:'https://docs.google.com/…' }] },
+    fields: [{ id:'url', label:'Google Doc share URL', ph:'https://docs.google.com/…' }] },
   { id: 'text',       name: 'Plain Text',    icon: AlignLeft,    bg: 'rgba(74,85,104,.28)',
     fields: [{ id:'content', label:'Paste your text', ph:'Enter or paste text…', multi: true }] },
   { id: 'api',        name: 'REST API',      icon: Zap,          bg: 'rgba(124,58,237,.14)',
@@ -114,7 +120,7 @@ function NewProjectModal({ onClose, onCreated }) {
           <label>Description <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
           <textarea
             style={{ width:'100%', minHeight:72, resize:'vertical', padding:'9px 14px',
-              background:'rgba(255,255,255,0.03)', border:'1px solid var(--border)',
+              background:'var(--bg-surface)', border:'1px solid var(--border)',
               borderRadius:'var(--radius-sm)', color:'var(--text-primary)',
               fontSize:13, fontFamily:'var(--font-body)' }}
             placeholder="What is this project about?"
@@ -140,6 +146,7 @@ function AddSourceModal({ project, onClose, onAdded }) {
   const [fieldValues, setFieldValues] = useState({})
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [selectedFile, setSelectedFile] = useState(null)
 
   // MCP connection status + resource browsing
   const [connStatus, setConnStatus] = useState({})    // { github: true, bigquery: false, … }
@@ -162,6 +169,7 @@ function AddSourceModal({ project, onClose, onAdded }) {
     setResources([])
     setSelectedResource(null)
     setSearchQuery('')
+    setSelectedFile(null)
 
     const t = getTypeInfo(typeId)
     // If MCP-backed and connected, fetch resources
@@ -183,6 +191,15 @@ function AddSourceModal({ project, onClose, onAdded }) {
     setLoading(true)
     setError(null)
     try {
+      // File upload path
+      if (t.fileUpload) {
+        if (!selectedFile) { setError('Please select a file.'); setLoading(false); return }
+        const formData = new FormData()
+        formData.append('file', selectedFile)
+        const res = await uploadProjectFile(project.id, formData)
+        onAdded(res.data)
+        return
+      }
       let label, config
       if (t.mcpKey && selectedResource) {
         const v = t.itemValue(selectedResource)
@@ -211,7 +228,11 @@ function AddSourceModal({ project, onClose, onAdded }) {
     t?.itemLabel(r).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
-  const canSubmit = isMcp ? !!selectedResource : selected && t?.fields
+  const canSubmit = t?.fileUpload
+    ? !!selectedFile
+    : isMcp
+      ? !!selectedResource
+      : selected && t?.fields
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -315,6 +336,43 @@ function AddSourceModal({ project, onClose, onAdded }) {
           </div>
         )}
 
+        {/* ── File upload type ── */}
+        {!isMcp && t?.fileUpload && (
+          <div className="src-config-section">
+            <div className="src-config-head">
+              {(() => { const I = t.icon; return <I size={16} /> })()}
+              Upload {t.name}
+            </div>
+            <p style={{ fontSize: 12.5, color: 'var(--text-tertiary)', margin: '0 0 10px' }}>
+              Accepted formats: {t.acceptLabel}
+            </p>
+            <label
+              htmlFor="file-upload-input"
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                padding: '24px 16px', border: '2px dashed var(--border)', borderRadius: 'var(--radius)',
+                cursor: 'pointer', background: 'var(--bg-surface)',
+                transition: 'border-color .15s',
+              }}
+              onDragOver={e => e.preventDefault()}
+              onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setSelectedFile(f) }}
+            >
+              <UploadCloud size={28} style={{ color: 'var(--text-tertiary)' }} />
+              {selectedFile
+                ? <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{selectedFile.name}</span>
+                : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Click to browse or drag & drop</span>
+              }
+              <input
+                id="file-upload-input"
+                type="file"
+                accept={t.accept}
+                style={{ display: 'none' }}
+                onChange={e => setSelectedFile(e.target.files[0] || null)}
+              />
+            </label>
+          </div>
+        )}
+
         {/* ── Manual source: input fields ── */}
         {!isMcp && t?.fields && (
           <div className="src-config-section">
@@ -328,7 +386,7 @@ function AddSourceModal({ project, onClose, onAdded }) {
                 {f.multi ? (
                   <textarea
                     style={{ width:'100%', minHeight:78, resize:'vertical', padding:'9px 14px',
-                      background:'rgba(255,255,255,0.03)', border:'1px solid var(--border)',
+                      background:'var(--bg-surface)', border:'1px solid var(--border)',
                       borderRadius:'var(--radius-sm)', color:'var(--text-primary)',
                       fontSize:13, fontFamily:'var(--font-body)' }}
                     placeholder={f.ph}
@@ -361,9 +419,330 @@ function AddSourceModal({ project, onClose, onAdded }) {
 }
 
 /* ============================================================
-   PROJECT WORKSPACE (inside a project — source manager)
+   PROJECT TEMPLATE PANEL
+   Lets users configure the spec template at the project level
+   (upload, manual, or preset) before launching the pipeline.
+============================================================ */
+function ProjectTemplatePanel({ project, onConfigured }) {
+  const { dispatch } = useProject()
+  const [mode, setMode] = useState('upload')   // 'upload' | 'manual' | 'preset'
+  const [file, setFile] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [placeholders, setPlaceholders] = useState([])
+  const [templateTitle, setTemplateTitle] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [editIdx, setEditIdx] = useState(null)
+  const [editField, setEditField] = useState(null) // 'label' | 'section'
+  // Presets
+  const [presets, setPresets] = useState([])
+  const [showSaveModal, setShowSaveModal] = useState(false)
+  const [presetName, setPresetName] = useState('')
+  const [presetSaving, setPresetSaving] = useState(false)
+  const [presetError, setPresetError] = useState(null)
+  const fileRef = useRef(null)
+
+  useEffect(() => {
+    getPlaceholderPresets().then(r => setPresets(r.data.presets || [])).catch(() => {})
+  }, [])
+
+  const handleUpload = async () => {
+    if (!file) return
+    setLoading(true); setError(null)
+    try {
+      const res = await pipelineTemplate(project.id, file)
+      setTemplateTitle(res.data.template_title || file.name)
+      setPlaceholders(res.data.placeholders || [])
+      setConfirmed(false)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to parse template.')
+    }
+    setLoading(false)
+  }
+
+  const handleLoadPreset = (preset) => {
+    setPlaceholders(preset.placeholders || [])
+    setTemplateTitle(preset.name)
+    setConfirmed(false)
+    setMode('upload')
+  }
+
+  const handleConfirm = () => {
+    dispatch({
+      type: 'SET_PROJECT_TEMPLATE',
+      payload: { template_title: templateTitle, placeholders },
+    })
+    setConfirmed(true)
+    onConfigured?.()
+  }
+
+  const handleSavePreset = async () => {
+    if (!presetName.trim() || placeholders.length === 0) return
+    setPresetSaving(true)
+    setPresetError(null)
+    try {
+      const res = await savePlaceholderPreset(presetName.trim(), placeholders)
+      setPresets(prev => [res.data, ...prev])
+      setShowSaveModal(false)
+      setPresetName('')
+    } catch (err) {
+      setPresetError(err.response?.data?.detail || 'Failed to save preset.')
+    }
+    setPresetSaving(false)
+  }
+
+  const handleDeletePreset = async (e, presetId) => {
+    e.stopPropagation()
+    try {
+      await deletePlaceholderPreset(presetId)
+      setPresets(prev => prev.filter(p => p.id !== presetId))
+    } catch {}
+  }
+
+  const updatePlaceholder = (idx, field, value) => {
+    const updated = [...placeholders]
+    updated[idx] = { ...updated[idx], [field]: value }
+    setPlaceholders(updated)
+  }
+
+  const removePlaceholder = (idx) => {
+    setPlaceholders(placeholders.filter((_, i) => i !== idx))
+  }
+
+  const addPlaceholder = () => {
+    const newPh = { id: `custom_${Date.now()}`, label: 'New Placeholder', section: '', type: 'text' }
+    setPlaceholders(prev => [...prev, newPh])
+    setEditIdx(placeholders.length)
+    setEditField('label')
+  }
+
+  // Show the full editor when: manual mode (always), or after placeholders are loaded
+  const showPanel = placeholders.length > 0 || mode === 'manual'
+
+  return (
+    <div className="project-template-panel" style={{ marginTop: 16, padding: '0 4px' }}>
+      {/* Mode tabs */}
+      <div className="pp-actions-row" style={{ marginBottom: 12 }}>
+        {[
+          { id: 'upload', label: 'Upload file' },
+          { id: 'manual', label: 'Manual input' },
+          { id: 'preset', label: 'Saved presets' },
+        ].map(m => (
+          <button
+            key={m.id}
+            className={`btn${mode === m.id ? ' btn-primary' : ' btn-secondary'}`}
+            onClick={() => setMode(m.id)}
+            style={{ fontSize: 12 }}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <div className="message error" style={{ marginBottom: 10 }}>{error}</div>}
+
+      {/* Upload mode — show file picker only when no placeholders loaded yet */}
+      {mode === 'upload' && !showPanel && (
+        <div>
+          <label
+            htmlFor="tpl-file-input"
+            style={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+              padding: '20px 16px', border: '2px dashed var(--border)', borderRadius: 'var(--radius)',
+              cursor: 'pointer', background: 'var(--bg-surface)', marginBottom: 10,
+            }}
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) setFile(f) }}
+          >
+            <UploadCloud size={24} style={{ color: 'var(--text-tertiary)' }} />
+            {file
+              ? <span style={{ fontSize: 13, fontWeight: 600 }}>{file.name}</span>
+              : <span style={{ fontSize: 13, color: 'var(--text-tertiary)' }}>Click to browse or drag & drop (.md, .txt, .docx, .pdf)</span>
+            }
+            <input id="tpl-file-input" ref={fileRef} type="file" accept=".md,.txt,.docx,.pdf"
+              style={{ display: 'none' }} onChange={e => setFile(e.target.files[0] || null)} />
+          </label>
+          {file && (
+            <button className="btn btn-primary" onClick={handleUpload} disabled={loading} style={{ fontSize: 12 }}>
+              {loading ? <><Loader2 size={12} className="spinner" /> Parsing…</> : 'Parse Template'}
+            </button>
+          )}
+        </div>
+      )}
+
+      {loading && (
+        <div className="loading">
+          <div className="spinner" />
+          <span>Parsing template and detecting placeholders…</span>
+        </div>
+      )}
+
+      {/* Preset mode */}
+      {mode === 'preset' && (
+        <div>
+          {presets.length === 0
+            ? <p style={{ fontSize: 13, color: 'var(--text-tertiary)', padding: '12px 0' }}>No saved presets yet.</p>
+            : (
+              <div className="preset-list">
+                {presets.map(p => (
+                  <div key={p.id} className="preset-item" onClick={() => handleLoadPreset(p)}>
+                    <div className="preset-item-info">
+                      <span className="preset-item-name">{p.name}</span>
+                      <span className="preset-item-count">{p.placeholders?.length || 0} placeholders</span>
+                    </div>
+                    <button className="btn-text" style={{ color: 'var(--danger)', fontSize: 11 }}
+                      onClick={e => handleDeletePreset(e, p.id)}>
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )
+          }
+        </div>
+      )}
+
+      {/* Full placeholder editor — shown for upload result, manual entry, and preset load */}
+      {showPanel && !loading && (
+        <div className="placeholder-panel">
+          {templateTitle && <div className="pp-title">Template: {templateTitle}</div>}
+          {mode === 'manual' && placeholders.length === 0 && (
+            <p className="pp-empty-hint">No placeholders yet — click <strong>Add Placeholder</strong> below to start.</p>
+          )}
+          {placeholders.length > 0 && (
+            <table className="pp-table">
+              <thead>
+                <tr>
+                  <th>Placeholder</th>
+                  <th>Section</th>
+                  <th>Type</th>
+                  <th style={{ width: 70 }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {placeholders.map((ph, i) => (
+                  <tr key={ph.id} className={confirmed ? 'locked' : ''}>
+                    <td>
+                      {editIdx === i && editField === 'label' && !confirmed ? (
+                        <input type="text" value={ph.label}
+                          onChange={e => updatePlaceholder(i, 'label', e.target.value)}
+                          onBlur={() => { setEditIdx(null); setEditField(null) }}
+                          autoFocus />
+                      ) : (
+                        <span className="pp-label" onClick={() => { if (!confirmed) { setEditIdx(i); setEditField('label') } }}>
+                          {ph.label}
+                          {!confirmed && <Pencil size={11} className="pp-edit-icon" />}
+                        </span>
+                      )}
+                    </td>
+                    <td className="pp-section">
+                      {editIdx === i && editField === 'section' && !confirmed ? (
+                        <input type="text" value={ph.section || ''}
+                          placeholder="Section name"
+                          onChange={e => updatePlaceholder(i, 'section', e.target.value)}
+                          onBlur={() => { setEditIdx(null); setEditField(null) }}
+                          autoFocus />
+                      ) : (
+                        <span className="pp-label" onClick={() => { if (!confirmed) { setEditIdx(i); setEditField('section') } }}>
+                          {ph.section || <span style={{ opacity: 0.4 }}>—</span>}
+                          {!confirmed && <Pencil size={11} className="pp-edit-icon" />}
+                        </span>
+                      )}
+                    </td>
+                    <td>
+                      {!confirmed ? (
+                        <select value={ph.type || 'text'}
+                          onChange={e => updatePlaceholder(i, 'type', e.target.value)}>
+                          <option value="text">Text</option>
+                          <option value="paragraph">Paragraph</option>
+                          <option value="list">List</option>
+                          <option value="choice">Choice</option>
+                          <option value="table">Table</option>
+                        </select>
+                      ) : (
+                        <span className="pp-type-badge">{ph.type}</span>
+                      )}
+                    </td>
+                    <td>
+                      {!confirmed && (
+                        <button className="btn-icon danger" onClick={() => removePlaceholder(i)}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="pp-actions-row">
+            {!confirmed && (
+              <button className="btn btn-secondary pp-add" onClick={addPlaceholder}>
+                <Plus size={14} /> Add Placeholder
+              </button>
+            )}
+            <button className="btn btn-secondary" onClick={() => { setPresetName(''); setPresetError(null); setShowSaveModal(true) }}>
+              <Save size={14} /> Save as Preset
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm / re-upload buttons */}
+      {placeholders.length > 0 && !loading && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+          {!confirmed && (
+            <button className="btn btn-primary" onClick={handleConfirm} style={{ fontSize: 13 }}>
+              <Check size={14} /> Use this template
+            </button>
+          )}
+          {!confirmed && mode === 'upload' && (
+            <button className="btn btn-secondary" style={{ fontSize: 12 }}
+              onClick={() => { setPlaceholders([]); setFile(null); setTemplateTitle('') }}>
+              ← Re-upload
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Save preset modal */}
+      {showSaveModal && (
+        <div className="preset-modal-overlay" onClick={() => setShowSaveModal(false)}>
+          <div className="preset-modal" onClick={e => e.stopPropagation()}>
+            <div className="preset-modal-header">
+              <span>Save as Preset</span>
+              <button className="btn-text" onClick={() => setShowSaveModal(false)}><X size={14} /></button>
+            </div>
+            <p className="preset-modal-hint">{placeholders.length} placeholder{placeholders.length !== 1 ? 's' : ''} will be saved.</p>
+            <input
+              className="preset-name-input"
+              type="text"
+              placeholder="Preset name (e.g. JEMS DataFlow Template)"
+              value={presetName}
+              onChange={e => setPresetName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleSavePreset()}
+              autoFocus
+            />
+            {presetError && <div className="message error">{presetError}</div>}
+            <div className="preset-modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowSaveModal(false)}>Cancel</button>
+              <button className="btn btn-primary" disabled={!presetName.trim() || presetSaving} onClick={handleSavePreset}>
+                {presetSaving ? <Loader2 size={12} className="spinner" /> : <Save size={12} />} Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ============================================================
+   PROJECT DETAIL PAGE
 ============================================================ */
 function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadFromCatalog }) {
+  const { state, dispatch } = useProject()
+  const { templateReady, templateTitle, placeholders } = state
   const [removing, setRemoving] = useState(null)
   const [showAddSource, setShowAddSource] = useState(false)
   const [message, setMessage] = useState(null)
@@ -375,8 +754,12 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
   const [catalogLoading, setCatalogLoading] = useState(true)
   const [catalogSearch, setCatalogSearch] = useState('')
   const [expandedSnapshot, setExpandedSnapshot] = useState(null)
-  // mergeSelections: { [snapshotId]: Set<pipelineId> }
   const [mergeSelections, setMergeSelections] = useState({})
+  const [visible, setVisible] = useState(false)
+  // Template panel state
+  const [showTemplatePanel, setShowTemplatePanel] = useState(false)
+
+  useEffect(() => { requestAnimationFrame(() => setVisible(true)) }, [])
 
   const toggleMerge = (snapshotId, pipelineId) => {
     setMergeSelections(prev => {
@@ -414,45 +797,30 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
   }
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await getProjectApprovedSpecs(project.id)
-        setApprovedSpecs(res.data.approved_specs || [])
-      } catch {
-        setApprovedSpecs([])
-      }
-      setSpecsLoading(false)
-    }
-    load()
+    getProjectApprovedSpecs(project.id)
+      .then(res => setApprovedSpecs(res.data.approved_specs || []))
+      .catch(() => setApprovedSpecs([]))
+      .finally(() => setSpecsLoading(false))
   }, [project.id])
 
   useEffect(() => {
-    const loadCatalog = async () => {
-      try {
-        const res = await pipelineGetCatalog(project.id)
-        setCatalogSnapshots(res.data.catalog || [])
-      } catch {
-        setCatalogSnapshots([])
-      }
-      setCatalogLoading(false)
-    }
-    loadCatalog()
+    pipelineGetCatalog(project.id)
+      .then(res => setCatalogSnapshots(res.data.catalog || []))
+      .catch(() => setCatalogSnapshots([]))
+      .finally(() => setCatalogLoading(false))
   }, [project.id])
 
   const handleDownloadSpec = (entry) => {
     const blob = new Blob([entry.spec], { type: 'text/markdown' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
+    const a = document.createElement('a'); a.href = url
     a.download = `${project.name.replace(/\s+/g, '_')}_v${entry.version_number}_approved.md`
-    a.click()
-    URL.revokeObjectURL(url)
+    a.click(); URL.revokeObjectURL(url)
   }
 
   const handleCopySpec = (spec) => {
     navigator.clipboard.writeText(spec).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
     })
   }
 
@@ -470,127 +838,177 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
     setRemoving(null)
   }
 
+  const totalPipelines = catalogSnapshots.reduce((s, sn) => s + sn.count, 0)
+  const hasSpecs = !specsLoading && approvedSpecs.length > 0
+  const needsPulse = !specsLoading && approvedSpecs.length === 0 && sources.length > 0
+
   return (
-    <div>
-      {/* Back + header */}
-      <button className="btn btn-secondary" onClick={onBack} style={{ marginBottom: 20, gap: 6 }}>
-        <ArrowLeft size={14} /> Back to Projects
+    <div className={`pd-page${visible ? ' pd-page--visible' : ''}`}>
+      {/* ── Back button ── */}
+      <button className="pd-back" onClick={onBack}>
+        <ArrowLeft size={14} />
+        Back to Projects
       </button>
 
-      <div className="page-header" style={{ marginBottom: 24 }}>
-        <h2>{project.name}</h2>
-        {project.description && <p>{project.description}</p>}
+      {/* ── Hero header ── */}
+      <div className="pd-hero pd-anim" style={{ '--delay': '0ms' }}>
+        <div className="pd-hero-text">
+          <h1 className="pd-title">{project.name}</h1>
+          <div className="pd-title-bar" />
+          {project.description && <p className="pd-desc">{project.description}</p>}
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="stats-bar" style={{ marginBottom: 24 }}>
-        <div className="stat-card">
-          <div className="stat-label">Total Sources</div>
-          <div className="stat-value">{sources.length}</div>
+      {/* ── Stat cards ── */}
+      <div className="pd-stats pd-anim" style={{ '--delay': '60ms' }}>
+        <div className="pd-stat-card">
+          <div className="pd-stat-label">Total Sources</div>
+          <div className="pd-stat-value">{sources.length}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">Connected</div>
-          <div className="stat-value" style={{ color: 'var(--success)' }}>{connectedCount}</div>
+        <div className="pd-stat-card">
+          <div className="pd-stat-label">Connected</div>
+          <div className="pd-stat-value pd-stat-value--green">{connectedCount}</div>
         </div>
-        <div className="stat-card">
-          <div className="stat-label">Created</div>
-          <div className="stat-value" style={{ fontSize: 14 }}>
-            {new Date(project.created_at).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })}
+        <div className="pd-stat-card">
+          <div className="pd-stat-label">Created</div>
+          <div className="pd-stat-value pd-stat-value--date">
+            {new Date(project.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
       </div>
 
       {message && <div className={`message ${message.type}`}>{message.text}</div>}
 
-      {/* Sources header */}
-      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom: 18 }}>
-        <div style={{ display:'flex', alignItems:'center', gap: 10 }}>
-          <h3 className="section-title" style={{ margin: 0 }}>
-            <Link2 size={16} /> Sources
-          </h3>
-          <span className="source-count-badge">{sources.length}</span>
+      {/* ── Sources section ── */}
+      <div className="pd-section pd-anim" style={{ '--delay': '120ms' }}>
+        <div className="pd-section-header">
+          <div className="pd-section-left">
+            <Link2 size={16} className="pd-section-icon" />
+            <span className="pd-section-title">Sources</span>
+            <span className="pd-count-badge">{sources.length}</span>
+          </div>
+          <button className="pd-btn-primary" onClick={() => setShowAddSource(true)}>
+            <Plus size={14} />
+            Add Source
+          </button>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowAddSource(true)}>
-          <Plus size={14} /> Add Source
-        </button>
+
+        {sources.length === 0 ? (
+          <div className="pd-empty">
+            <div className="pd-empty-icon"><FileText size={22} /></div>
+            <div className="pd-empty-title">No sources yet</div>
+            <p className="pd-empty-sub">
+              Connect your first source to start building a specification.
+            </p>
+            <button className="pd-btn-primary" onClick={() => setShowAddSource(true)}>
+              <Plus size={14} /> Connect your first source
+            </button>
+          </div>
+        ) : (
+          <div className="pd-sources-grid">
+            {sources.map((s, i) => {
+              const t = getTypeInfo(s.type)
+              const Icon = t.icon
+              return (
+                <div key={s.id} className="pd-source-card" style={{ '--i': i }}>
+                  <div className="pd-source-top">
+                    <div className="pd-source-icon" style={{ background: t.bg }}>
+                      <Icon size={18} />
+                    </div>
+                    <div className="pd-source-info">
+                      <div className="pd-source-name">{s.label}</div>
+                      <div className="pd-source-type">{s.type_name}</div>
+                    </div>
+                  </div>
+                  <div className="pd-source-foot">
+                    <span className={`pd-status-badge pd-status-badge--${s.status === 'connected' ? 'green' : s.status === 'error' ? 'pink' : 'muted'}`}>
+                      <span className="pd-status-dot" />
+                      {s.status === 'connected' ? 'Connected' : s.status === 'error' ? 'Error' : 'Pending'}
+                    </span>
+                    <button
+                      className="pd-delete-icon"
+                      onClick={() => handleRemove(s.id)}
+                      disabled={removing === s.id}
+                      title="Remove source"
+                    >
+                      {removing === s.id ? <Loader2 size={14} className="spinner" /> : <Trash2 size={14} />}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+            <div className="pd-source-add" onClick={() => setShowAddSource(true)}>
+              <div className="pd-source-add-icon"><Plus size={14} /></div>
+              <span>Add Another Source</span>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Sources grid or empty state */}
-      {sources.length === 0 ? (
-        <div className="sources-empty-state">
-          <div className="se-icon-wrap">
-            <FileText size={22} />
+      {/* ── Template Section ── */}
+      <div className="pd-section pd-anim" style={{ '--delay': '150ms' }}>
+        <div className="pd-section-header">
+          <div className="pd-section-left">
+            <FileText size={16} className="pd-section-icon" />
+            <span className="pd-section-title">Template</span>
+            {templateReady && <span className="pd-count-badge">✓</span>}
           </div>
-          <div className="se-title">No sources yet</div>
-          <p className="se-desc">
-            Connect your first source to start building a specification.
-            You can combine as many sources as you need.
-          </p>
-          <button className="btn btn-primary" onClick={() => setShowAddSource(true)}>
-            <Plus size={14} /> Connect your first source
+          <button className="pd-btn-primary" onClick={() => setShowTemplatePanel(v => !v)}>
+            {templateReady ? <><Pencil size={14} /> Change</> : <><Plus size={14} /> Configure</>}
           </button>
         </div>
-      ) : (
-        <div className="project-sources-grid">
-          {sources.map(s => {
-            const t = getTypeInfo(s.type)
-            const Icon = t.icon
-            return (
-              <div key={s.id} className="psource-card">
-                <div className="psource-top">
-                  <div className="psource-icon" style={{ background: t.bg }}>
-                    <Icon size={18} />
-                  </div>
-                  <div className="psource-info">
-                    <div className="psource-label">{s.label}</div>
-                    <div className="psource-type">{s.type_name}</div>
-                  </div>
-                </div>
-                <div className="psource-foot">
-                  <div className={`card-status ${s.status === 'connected' ? 'connected' : s.status === 'error' ? 'error' : 'disconnected'}`}>
-                    <span className="dot" />
-                    {s.status.charAt(0).toUpperCase() + s.status.slice(1)}
-                  </div>
-                  <button
-                    className="btn btn-danger-outline"
-                    style={{ padding:'5px 10px', fontSize:12 }}
-                    onClick={() => handleRemove(s.id)}
-                    disabled={removing === s.id}
-                  >
-                    {removing === s.id ? <Loader2 size={12} className="spinner" /> : <Trash2 size={12} />}
-                  </button>
-                </div>
-              </div>
-            )
-          })}
 
-          {/* "Add another" card */}
-          <div className="psource-add-card" onClick={() => setShowAddSource(true)}>
-            <div className="psa-icon"><Plus size={18} /></div>
-            <span className="psa-label">Add Another Source</span>
+        {!templateReady && !showTemplatePanel && (
+          <div className="pd-empty" style={{ padding: '20px 0' }}>
+            <div className="pd-empty-icon"><FileText size={22} /></div>
+            <div className="pd-empty-title">No template configured</div>
+            <p className="pd-empty-sub">Choose your spec template before launching the pipeline.</p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Generate button (below sources) */}
+        {templateReady && !showTemplatePanel && (
+          <div className="pd-template-summary">
+            <div className="pd-template-name">{templateTitle || 'Custom template'}</div>
+            <div className="pd-template-meta">{placeholders.length} placeholder{placeholders.length !== 1 ? 's' : ''}</div>
+          </div>
+        )}
+
+        {showTemplatePanel && (
+          <ProjectTemplatePanel
+            project={project}
+            onConfigured={() => setShowTemplatePanel(false)}
+          />
+        )}
+      </div>
+
+      {/* ── Generate Spec CTA ── */}
       {sources.length > 0 && (
-        <div style={{ marginTop: 28, display:'flex', alignItems:'center', gap:14 }}>
-          <button className="btn btn-primary" style={{ padding:'11px 24px', fontWeight:600 }}
-            onClick={() => onStartPipeline(project)}>
-            <Zap size={14} /> Generate Spec from {sources.length} source{sources.length !== 1 ? 's' : ''} →
+        <div className="pd-cta-row pd-anim" style={{ '--delay': '160ms' }}>
+          {!templateReady && (
+            <p style={{ fontSize: 12.5, color: 'var(--text-tertiary)', textAlign: 'center', marginBottom: 8 }}>
+              Configure a template above to enable pipeline launch.
+            </p>
+          )}
+          <button
+            className={`pd-cta-btn${needsPulse && templateReady ? ' pd-cta-btn--pulse' : ''}`}
+            onClick={() => onStartPipeline(project)}
+            disabled={!templateReady}
+            style={!templateReady ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
+          >
+            <Zap size={16} />
+            Generate Spec from {sources.length} source{sources.length !== 1 ? 's' : ''} →
           </button>
         </div>
       )}
 
-      {/* ── Generated Specs ───────────────────────────────────── */}
-      <div style={{ marginTop: 36 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:18 }}>
-          <h3 className="section-title" style={{ margin:0 }}>
-            <ScrollText size={16} /> Generated Specs
-          </h3>
-          {approvedSpecs.length > 0 && (
-            <span className="source-count-badge">{approvedSpecs.length}</span>
-          )}
+      {/* ── Generated Specs ── */}
+      <div className="pd-section pd-anim" style={{ '--delay': '200ms' }}>
+        <div className="pd-section-header">
+          <div className="pd-section-left">
+            <ScrollText size={16} className="pd-section-icon" />
+            <span className="pd-section-title">Generated Specs</span>
+            {hasSpecs && <span className="pd-count-badge">{approvedSpecs.length}</span>}
+          </div>
         </div>
 
         {specsLoading && (
@@ -598,58 +1016,34 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
         )}
 
         {!specsLoading && approvedSpecs.length === 0 && (
-          <div className="sources-empty-state">
-            <div className="se-icon-wrap"><ScrollText size={22} /></div>
-            <div className="se-title">No approved specs yet</div>
-            <p className="se-desc">
+          <div className="pd-empty">
+            <div className="pd-empty-icon"><ScrollText size={22} /></div>
+            <div className="pd-empty-title">No approved specs yet</div>
+            <p className="pd-empty-sub">
               Run the pipeline wizard and promote a spec version to Approved — it will appear here.
             </p>
           </div>
         )}
 
         {!specsLoading && approvedSpecs.length > 0 && (
-          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {[...approvedSpecs].reverse().map((entry) => (
-              <div key={entry.version_id} style={{
-                background: 'var(--bg-elevated)',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                padding: '14px 18px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 16,
-                flexWrap: 'wrap',
-              }}>
-                <div style={{ display:'flex', alignItems:'center', gap:10, flex:1, minWidth:200 }}>
-                  <div style={{
-                    background: 'rgba(52,211,153,.12)',
-                    color: 'var(--success)',
-                    borderRadius: 999,
-                    padding: '3px 10px',
-                    fontSize: 11,
-                    fontWeight: 700,
-                    border: '1px solid rgba(52,211,153,.22)',
-                    whiteSpace: 'nowrap',
-                  }}>v{entry.version_number} approved</div>
-                  <div>
-                    <div style={{ fontWeight:600, fontSize:14, color:'var(--text-primary)' }}>
-                      {entry.pipeline_name}
-                    </div>
-                    <div style={{ fontSize:12, color:'var(--text-secondary)', marginTop:2 }}>
-                      {new Date(entry.approved_at).toLocaleString('en-US', {
-                        month:'short', day:'numeric', year:'numeric',
-                        hour:'2-digit', minute:'2-digit',
-                      })}
-                    </div>
-                  </div>
+          <div className="pd-specs-list">
+            {[...approvedSpecs].reverse().map(entry => (
+              <div key={entry.version_id} className="pd-spec-row">
+                <span className="pd-badge pd-badge--green">v{entry.version_number} approved</span>
+                <div className="pd-spec-meta">
+                  <span className="pd-spec-name">{entry.pipeline_name}</span>
+                  <span className="pd-spec-date">
+                    {new Date(entry.approved_at).toLocaleString('en-US', {
+                      month: 'short', day: 'numeric', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </span>
                 </div>
-                <div style={{ display:'flex', gap:8 }}>
-                  <button className="btn btn-secondary" style={{ padding:'6px 14px', fontSize:12 }}
-                    onClick={() => setViewingSpec(entry)}>
+                <div className="pd-spec-actions">
+                  <button className="pd-btn-ghost" onClick={() => setViewingSpec(entry)}>
                     <FileText size={13} /> View
                   </button>
-                  <button className="btn btn-secondary" style={{ padding:'6px 14px', fontSize:12 }}
-                    onClick={() => handleDownloadSpec(entry)}>
+                  <button className="pd-btn-ghost" onClick={() => handleDownloadSpec(entry)}>
                     <Download size={13} /> Download
                   </button>
                 </div>
@@ -660,15 +1054,16 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
       </div>
 
       {/* ── Detected Pipelines Catalog ── */}
-      <div style={{ marginTop: 32 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <BookMarked size={16} style={{ color: 'var(--accent)' }} />
-            <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>Detected Pipelines Catalog</span>
+      <div className="pd-section pd-anim" style={{ '--delay': '240ms' }}>
+        <div className="pd-section-header">
+          <div className="pd-section-left">
+            <BookMarked size={16} className="pd-section-icon" />
+            <span className="pd-section-title">Detected Pipelines Catalog</span>
             {catalogSnapshots.length > 0 && (
-              <span style={{ fontSize: 11, fontWeight: 700, background: 'rgba(14,165,233,.12)', color: 'var(--accent)', border: '1px solid rgba(14,165,233,.22)', borderRadius: 999, padding: '1px 8px' }}>
-                {catalogSnapshots.reduce((sum, s) => sum + s.count, 0)} pipelines · {catalogSnapshots.length} snapshot{catalogSnapshots.length !== 1 ? 's' : ''}
-              </span>
+              <>
+                <span className="pd-badge pd-badge--pink">{totalPipelines} pipeline{totalPipelines !== 1 ? 's' : ''}</span>
+                <span className="pd-badge pd-badge--orange">{catalogSnapshots.length} snapshot{catalogSnapshots.length !== 1 ? 's' : ''}</span>
+              </>
             )}
           </div>
         </div>
@@ -676,163 +1071,122 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
         {catalogLoading && <div className="loading"><div className="spinner" /><span>Loading catalog…</span></div>}
 
         {!catalogLoading && catalogSnapshots.length === 0 && (
-          <div className="sources-empty-state">
-            <div className="se-icon-wrap"><BookMarked size={22} /></div>
-            <div className="se-title">No pipeline snapshots saved</div>
-            <p className="se-desc">
-              Run pipeline detection and click <strong>Save to Catalog</strong> in the detection step to preserve a snapshot here.
+          <div className="pd-empty">
+            <div className="pd-empty-icon"><BookMarked size={22} /></div>
+            <div className="pd-empty-title">No pipeline snapshots saved</div>
+            <p className="pd-empty-sub">
+              Run pipeline detection and click <strong>Save to Catalog</strong> to preserve a snapshot here.
             </p>
           </div>
         )}
 
         {!catalogLoading && catalogSnapshots.length > 0 && (
           <>
-            <div style={{ position: 'relative', marginBottom: 10 }}>
-              <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} />
+            <div className="pd-catalog-search-wrap">
+              <Search size={14} className="pd-catalog-search-icon" />
               <input
+                className="pd-catalog-search"
                 type="text"
                 placeholder="Search catalog pipelines…"
                 value={catalogSearch}
                 onChange={e => setCatalogSearch(e.target.value)}
-                style={{
-                  width: '100%', paddingLeft: 30, paddingRight: 8, paddingTop: 6, paddingBottom: 6,
-                  fontSize: 12, border: '1px solid var(--border)', borderRadius: 6,
-                  background: 'var(--surface)', color: 'var(--text-primary)', boxSizing: 'border-box',
-                }}
               />
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {[...catalogSnapshots].reverse().map((snapshot) => {
+
+            <div className="pd-catalog-list">
+              {[...catalogSnapshots].reverse().map(snapshot => {
                 const isExpanded = expandedSnapshot === snapshot.id
                 const q = catalogSearch.toLowerCase()
                 const matchedPipelines = q
-                  ? snapshot.pipelines.filter(p => p.name?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q) || p.description?.toLowerCase().includes(q))
+                  ? snapshot.pipelines.filter(p =>
+                      p.name?.toLowerCase().includes(q) ||
+                      p.category?.toLowerCase().includes(q) ||
+                      p.description?.toLowerCase().includes(q))
                   : snapshot.pipelines
                 if (q && matchedPipelines.length === 0) return null
+
+                const sel = mergeSelections[snapshot.id]
+                const selCount = sel ? sel.size : 0
+                const allIds = matchedPipelines.map(p => p.id)
+                const allSelected = allIds.length > 0 && allIds.every(id => sel?.has(id))
+
                 return (
-                  <div key={snapshot.id} style={{ border: '1px solid var(--border)', borderRadius: 10, background: 'var(--bg-elevated)', overflow: 'hidden' }}>
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}
-                      onClick={() => setExpandedSnapshot(isExpanded ? null : snapshot.id)}
-                    >
-                      <BookMarked size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
-                          {snapshot.count} pipeline{snapshot.count !== 1 ? 's' : ''}
+                  <div key={snapshot.id} className="pd-snapshot">
+                    <div className="pd-snapshot-header" onClick={() => setExpandedSnapshot(isExpanded ? null : snapshot.id)}>
+                      <BookMarked size={14} className="pd-section-icon" />
+                      <div className="pd-snapshot-meta">
+                        <span className="pd-snapshot-count">{snapshot.count} pipeline{snapshot.count !== 1 ? 's' : ''}</span>
+                        <span className="pd-snapshot-time">
+                          <Clock size={11} />
+                          {new Date(snapshot.saved_at).toLocaleString('en-US', {
+                            month: 'short', day: 'numeric', year: 'numeric',
+                            hour: '2-digit', minute: '2-digit',
+                          })}
                         </span>
-                        <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--text-secondary)' }}>
-                          <Clock size={11} style={{ verticalAlign: 'middle', marginRight: 3 }} />
-                          {new Date(snapshot.saved_at).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {q && <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--accent)' }}>{matchedPipelines.length} match{matchedPipelines.length !== 1 ? 'es' : ''}</span>}
+                        {q && <span className="pd-badge pd-badge--pink">{matchedPipelines.length} match{matchedPipelines.length !== 1 ? 'es' : ''}</span>}
                       </div>
-                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{isExpanded ? '▲' : '▼'}</span>
+                      {isExpanded ? <ChevronDown size={14} className="pd-snapshot-chevron" /> : <ChevronRight size={14} className="pd-snapshot-chevron" />}
                     </div>
+
                     {isExpanded && (
-                      <div style={{ borderTop: '1px solid var(--border)', padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {/* Merge action bar */}
-                        {(() => {
-                          const sel = mergeSelections[snapshot.id]
-                          const selCount = sel ? sel.size : 0
-                          const allIds = matchedPipelines.map(p => p.id)
-                          const allSelected = allIds.length > 0 && allIds.every(id => sel?.has(id))
-                          return (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)', cursor: 'pointer', userSelect: 'none' }}>
-                                <input
-                                  type="checkbox"
-                                  checked={allSelected}
-                                  onChange={() => {
-                                    if (allSelected) {
-                                      setMergeSelections(prev => ({ ...prev, [snapshot.id]: new Set() }))
-                                    } else {
-                                      setMergeSelections(prev => ({ ...prev, [snapshot.id]: new Set(allIds) }))
-                                    }
-                                  }}
-                                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-                                />
-                                Select all
-                              </label>
-                              {selCount >= 2 && (
-                                <button
-                                  className="btn btn-primary"
-                                  style={{ fontSize: 11, padding: '4px 12px' }}
-                                  onClick={() => {
-                                    const selected = matchedPipelines.filter(p => sel.has(p.id))
-                                    const merged = mergePipelinesFromCatalog(selected)
-                                    onLoadFromCatalog && onLoadFromCatalog(project, [merged], merged)
-                                  }}
-                                >
-                                  Merge {selCount} & Use for Spec →
-                                </button>
-                              )}
-                              {selCount === 1 && (
-                                <button
-                                  className="btn btn-primary"
-                                  style={{ fontSize: 11, padding: '4px 12px' }}
-                                  onClick={() => {
-                                    const selected = matchedPipelines.find(p => sel.has(p.id))
-                                    onLoadFromCatalog && onLoadFromCatalog(project, [selected], selected)
-                                  }}
-                                >
-                                  Use selected for Spec →
-                                </button>
-                              )}
-                              {selCount > 0 && (
-                                <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                  {selCount} selected
-                                </span>
-                              )}
-                            </div>
-                          )
-                        })()}
+                      <div className="pd-snapshot-body">
+                        <div className="pd-merge-bar">
+                          <label className="pd-merge-all">
+                            <input type="checkbox" checked={allSelected}
+                              onChange={() => setMergeSelections(prev => ({
+                                ...prev, [snapshot.id]: allSelected ? new Set() : new Set(allIds)
+                              }))}
+                              style={{ accentColor: '#FF2D78' }}
+                            />
+                            Select all
+                          </label>
+                          {selCount >= 2 && (
+                            <button className="pd-btn-primary pd-btn-primary--sm"
+                              onClick={() => {
+                                const s = matchedPipelines.filter(p => sel.has(p.id))
+                                onLoadFromCatalog?.(project, [mergePipelinesFromCatalog(s)], mergePipelinesFromCatalog(s))
+                              }}>
+                              Merge {selCount} & Use for Spec →
+                            </button>
+                          )}
+                          {selCount === 1 && (
+                            <button className="pd-btn-primary pd-btn-primary--sm"
+                              onClick={() => {
+                                const s = matchedPipelines.find(p => sel.has(p.id))
+                                onLoadFromCatalog?.(project, [s], s)
+                              }}>
+                              Use selected for Spec →
+                            </button>
+                          )}
+                          {selCount > 0 && <span className="pd-merge-count">{selCount} selected</span>}
+                        </div>
 
                         {matchedPipelines.map(p => {
                           const isChecked = mergeSelections[snapshot.id]?.has(p.id) || false
                           return (
-                            <div key={p.id} style={{
-                              display: 'flex', alignItems: 'flex-start', gap: 12, padding: '10px 12px',
-                              border: `1px solid ${isChecked ? 'rgba(14,165,233,.4)' : 'var(--border)'}`,
-                              borderRadius: 8, background: isChecked ? 'rgba(14,165,233,.05)' : 'var(--surface)',
-                              transition: 'border-color .2s, background .2s',
-                            }}>
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
+                            <div key={p.id} className={`pd-pipeline-row${isChecked ? ' pd-pipeline-row--checked' : ''}`}>
+                              <input type="checkbox" checked={isChecked}
                                 onChange={() => toggleMerge(snapshot.id, p.id)}
-                                style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
+                                style={{ accentColor: '#FF2D78', width: 14, height: 14, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}
                               />
-                              <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                  <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{p.name}</span>
-                                  {p.category && (
-                                    <span style={{ fontSize: 10, fontWeight: 700, background: 'rgba(14,165,233,.1)', color: 'var(--accent)', border: '1px solid rgba(14,165,233,.2)', borderRadius: 999, padding: '1px 7px' }}>
-                                      {p.category}
-                                    </span>
-                                  )}
-                                  {p.execution_mode && (
-                                    <span style={{ fontSize: 10, fontWeight: 600, background: 'rgba(124,58,237,.1)', color: '#a78bfa', border: '1px solid rgba(124,58,237,.2)', borderRadius: 999, padding: '1px 7px' }}>
-                                      {p.execution_mode}
-                                    </span>
-                                  )}
+                              <div className="pd-pipeline-info">
+                                <div className="pd-pipeline-badges">
+                                  <span className="pd-pipeline-name">{p.name}</span>
+                                  {p.category && <span className="pd-badge pd-badge--pink">{p.category}</span>}
+                                  {p.execution_mode && <span className="pd-badge pd-badge--purple">{p.execution_mode}</span>}
                                   {p.confidence != null && (
-                                    <span style={{ fontSize: 10, color: 'var(--text-secondary)' }}>
-                                      {Math.round(p.confidence * 100)}% confidence
-                                    </span>
+                                    <span className="pd-pipeline-conf">{Math.round(p.confidence * 100)}% confidence</span>
                                   )}
                                 </div>
-                                {p.description && <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>{p.description}</div>}
+                                {p.description && <div className="pd-pipeline-desc">{p.description}</div>}
                                 {p.source_files?.length > 0 && (
-                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                                  <div className="pd-pipeline-files">
                                     {p.source_files.slice(0, 3).join(', ')}{p.source_files.length > 3 ? ` +${p.source_files.length - 3} more` : ''}
                                   </div>
                                 )}
                               </div>
-                              <button
-                                className="btn btn-secondary"
-                                style={{ fontSize: 11, padding: '4px 10px', whiteSpace: 'nowrap', flexShrink: 0 }}
-                                onClick={() => onLoadFromCatalog && onLoadFromCatalog(project, [p], p)}
-                              >
+                              <button className="pd-btn-ghost pd-btn-ghost--sm"
+                                onClick={() => onLoadFromCatalog?.(project, [p], p)}>
                                 Use for Spec →
                               </button>
                             </div>
@@ -851,26 +1205,21 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
       {/* Spec viewer modal */}
       {viewingSpec && (
         <div className="modal-overlay" onClick={() => setViewingSpec(null)}>
-          <div className="modal" style={{ maxWidth:820, width:'95vw', maxHeight:'85vh', display:'flex', flexDirection:'column' }}
+          <div className="modal" style={{ maxWidth: 820, width: '95vw', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}
             onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16, flexShrink:0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexShrink: 0 }}>
               <div>
-                <span style={{ fontWeight:700, fontSize:15 }}>
+                <span style={{ fontWeight: 700, fontSize: 15 }}>
                   {viewingSpec.pipeline_name} — v{viewingSpec.version_number}
                 </span>
-                <span style={{
-                  marginLeft:10, fontSize:11, fontWeight:700,
-                  background:'rgba(52,211,153,.12)', color:'var(--success)',
-                  border:'1px solid rgba(52,211,153,.22)', borderRadius:999, padding:'2px 9px',
-                }}>Approved</span>
+                <span className="pd-badge pd-badge--green" style={{ marginLeft: 10 }}>Approved</span>
               </div>
-              <div style={{ display:'flex', gap:8 }}>
-                <button className="btn btn-secondary" style={{ padding:'5px 12px', fontSize:12 }}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}
                   onClick={() => handleCopySpec(viewingSpec.spec)}>
-                  {copied ? <Check size={13} /> : <Copy size={13} />}
-                  {copied ? 'Copied' : 'Copy'}
+                  {copied ? <Check size={13} /> : <Copy size={13} />}{copied ? 'Copied' : 'Copy'}
                 </button>
-                <button className="btn btn-secondary" style={{ padding:'5px 12px', fontSize:12 }}
+                <button className="btn btn-secondary" style={{ padding: '5px 12px', fontSize: 12 }}
                   onClick={() => handleDownloadSpec(viewingSpec)}>
                   <Download size={13} /> Download
                 </button>
@@ -878,16 +1227,15 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
               </div>
             </div>
             <pre style={{
-              flex:1, overflow:'auto', background:'var(--bg-deep)',
-              border:'1px solid var(--border)', borderRadius:8,
-              padding:16, fontSize:12.5, lineHeight:1.6,
-              color:'var(--text-primary)', whiteSpace:'pre-wrap', wordBreak:'break-word',
+              flex: 1, overflow: 'auto', background: 'var(--bg-deep)',
+              border: '1px solid var(--border)', borderRadius: 8,
+              padding: 16, fontSize: 12.5, lineHeight: 1.6,
+              color: 'var(--text-primary)', whiteSpace: 'pre-wrap', wordBreak: 'break-word',
             }}>{viewingSpec.spec}</pre>
           </div>
         </div>
       )}
 
-      {/* Add Source Modal */}
       {showAddSource && (
         <AddSourceModal
           project={project}
@@ -900,7 +1248,7 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
 }
 
 /* ============================================================
-   MAIN PAGE — PROJECTS DASHBOARD
+   MAIN PAGE — PROJECTS LIST
 ============================================================ */
 function ProjectsPage() {
   const { dispatch } = useProject()
@@ -911,6 +1259,7 @@ function ProjectsPage() {
   const [openProject, setOpenProject] = useState(null)
   const [message, setMessage] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [listVisible, setListVisible] = useState(false)
 
   const fetchProjects = async () => {
     try {
@@ -927,12 +1276,14 @@ function ProjectsPage() {
       const res = await getProject(id)
       setOpenProject(res.data)
     } catch {
-      setOpenProjectId(null)
-      setOpenProject(null)
+      setOpenProjectId(null); setOpenProject(null)
     }
   }
 
   useEffect(() => { fetchProjects() }, [])
+  useEffect(() => {
+    if (!loading) requestAnimationFrame(() => setListVisible(true))
+  }, [loading])
   useEffect(() => {
     if (openProjectId) fetchOpenProject(openProjectId)
     else setOpenProject(null)
@@ -943,39 +1294,44 @@ function ProjectsPage() {
     setDeleting(pid)
     try {
       await deleteProject(pid)
-      setMessage({ type:'success', text:'Project deleted' })
+      setMessage({ type: 'success', text: 'Project deleted' })
       fetchProjects()
     } catch (err) {
-      setMessage({ type:'error', text: err.response?.data?.detail || 'Failed to delete' })
+      setMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to delete' })
     }
     setDeleting(null)
     setTimeout(() => setMessage(null), 3000)
   }
 
-  /* Inside a project */
+  /* ── Project Detail view ── */
   if (openProject) {
     return (
       <ProjectWorkspace
         project={openProject}
         onBack={() => { setOpenProjectId(null); fetchProjects() }}
         onRefresh={() => fetchOpenProject(openProject.id)}
-        onStartPipeline={(proj) => dispatch({ type: 'OPEN_PROJECT', payload: proj })}
-        onLoadFromCatalog={(proj, pipelines, selected) => dispatch({ type: 'LOAD_FROM_CATALOG', payload: { project: proj, pipelines, selectedPipeline: selected } })}
+        onStartPipeline={proj => dispatch({ type: 'OPEN_PROJECT', payload: proj })}
+        onLoadFromCatalog={(proj, pipelines, selected) =>
+          dispatch({ type: 'LOAD_FROM_CATALOG', payload: { project: proj, pipelines, selectedPipeline: selected } })
+        }
       />
     )
   }
 
-  /* Dashboard */
+  /* ── Projects List view ── */
   return (
-    <div>
-      <div className="page-header">
-        <h2>Projects</h2>
-        <p>Each project aggregates multiple sources and generates a unified specification using AI.</p>
-      </div>
-
-      <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:20 }}>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          <Plus size={14} /> New Project
+    <div className={`pl-page${listVisible ? ' pl-page--visible' : ''}`}>
+      {/* Page header */}
+      <div className="pl-header pl-anim" style={{ '--delay': '0ms' }}>
+        <div className="pl-header-text">
+          <h1 className="pl-title">Projects</h1>
+          <p className="pl-subtitle">
+            Each project aggregates multiple sources and generates a unified specification using AI.
+          </p>
+        </div>
+        <button className="pd-btn-primary" onClick={() => setShowModal(true)}>
+          <Plus size={14} />
+          New Project
         </button>
       </div>
 
@@ -986,52 +1342,76 @@ function ProjectsPage() {
       )}
 
       {!loading && projects.length === 0 && (
-        <div className="sources-empty-state">
-          <div className="se-icon-wrap"><FolderOpen size={22} /></div>
-          <div className="se-title">No projects yet</div>
-          <p className="se-desc">
+        <div className="pd-empty pl-anim" style={{ '--delay': '60ms' }}>
+          <div className="pd-empty-icon"><FolderOpen size={22} /></div>
+          <div className="pd-empty-title">No projects yet</div>
+          <p className="pd-empty-sub">
             Create your first project to start connecting sources and generating specifications.
           </p>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+          <button className="pd-btn-primary" onClick={() => setShowModal(true)}>
             <Plus size={14} /> Create your first project
           </button>
         </div>
       )}
 
       {!loading && projects.length > 0 && (
-        <div className="projects-grid">
-          {/* New project placeholder */}
-          <div className="project-add-card" onClick={() => setShowModal(true)}>
-            <div className="psa-icon"><Plus size={20} /></div>
-            <span className="psa-label">New Project</span>
+        <div className="pl-grid">
+          {/* "New Project" card — always first */}
+          <div className="pl-add-card pl-anim" style={{ '--delay': '40ms' }} onClick={() => setShowModal(true)}>
+            <div className="pl-add-icon">
+              <Plus size={18} />
+            </div>
+            <span className="pl-add-label">New Project</span>
           </div>
 
-          {projects.map(p => {
-            const initials = p.name.trim().split(/\s+/).map(w => w[0]).join('').slice(0,2).toUpperCase()
+          {projects.map((p, i) => {
+            const initials = p.name.trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase()
             const total = (p.sources || []).length
             const conn = (p.sources || []).filter(s => s.status === 'connected').length
             const badge = total === 0
               ? 'No sources yet'
               : `${total} source${total !== 1 ? 's' : ''}${conn > 0 ? ` · ${conn} connected` : ''}`
             return (
-              <div key={p.id} className="project-card" onClick={() => setOpenProjectId(p.id)}>
-                <div className="pc-head">
-                  <div className="pc-avatar">{initials}</div>
-                  <div className="pc-meta">
-                    <div className="pc-name">{p.name}</div>
-                    <div className="pc-desc">{p.description || 'No description'}</div>
+              <div
+                key={p.id}
+                className="pl-card pl-anim"
+                style={{ '--delay': `${(i + 1) * 60}ms` }}
+                onClick={() => { dispatch({ type: 'CLEAR_PROJECT_TEMPLATE' }); setOpenProjectId(p.id) }}
+              >
+                {/* Gradient left accent */}
+                <div className="pl-card-accent" />
+
+                {/* Header */}
+                <div className="pl-card-head">
+                  <div className="pl-avatar">{initials}</div>
+                  <div className="pl-card-meta">
+                    <div className="pl-card-name">{p.name}</div>
+                    <div className={`pl-card-desc${!p.description ? ' pl-card-desc--empty' : ''}`}>
+                      {p.description || 'No description'}
+                    </div>
                   </div>
                 </div>
-                <div className="pc-foot">
-                  <span className="pc-badge"><span className="dot" />{badge}</span>
-                  <div style={{ display:'flex', gap:6 }}>
-                    <button className="btn btn-primary" style={{ padding:'4px 12px', fontSize:11.5 }}
-                      onClick={e => { e.stopPropagation(); setOpenProjectId(p.id) }}>
+
+                {/* Footer */}
+                <div className="pl-card-foot">
+                  <span className="pl-status">
+                    <span className="pl-status-dot" />
+                    {badge}
+                  </span>
+                  <div className="pl-card-actions">
+                    <button
+                      className="pd-btn-ghost pd-btn-ghost--sm"
+                      onClick={e => { e.stopPropagation(); setOpenProjectId(p.id) }}
+                    >
                       Open →
                     </button>
-                    <button className="btn btn-danger-outline" style={{ padding:'4px 8px' }}
-                      onClick={e => handleDelete(e, p.id)} disabled={deleting === p.id}>
-                      {deleting === p.id ? <Loader2 size={12} className="spinner" /> : <Trash2 size={12} />}
+                    <button
+                      className="pl-delete-btn"
+                      onClick={e => handleDelete(e, p.id)}
+                      disabled={deleting === p.id}
+                      title="Delete project"
+                    >
+                      {deleting === p.id ? <Loader2 size={14} className="spinner" /> : <Trash2 size={14} />}
                     </button>
                   </div>
                 </div>
@@ -1044,7 +1424,7 @@ function ProjectsPage() {
       {showModal && (
         <NewProjectModal
           onClose={() => setShowModal(false)}
-          onCreated={(proj) => { setShowModal(false); setOpenProjectId(proj.id); fetchProjects() }}
+          onCreated={proj => { setShowModal(false); setOpenProjectId(proj.id); fetchProjects() }}
         />
       )}
     </div>

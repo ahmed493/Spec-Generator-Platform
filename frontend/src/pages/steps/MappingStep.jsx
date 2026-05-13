@@ -12,7 +12,7 @@ export default function MappingStep() {
   const [editableSpec, setEditableSpec] = useState(spec)
   const [hoveredPlaceholder, setHoveredPlaceholder] = useState(null)
 
-  const confirmed = gates[3]
+  const confirmed = gates[2]
 
   useEffect(() => {
     if (!spec && !loading && Object.keys(confirmedValues).length > 0) {
@@ -46,7 +46,7 @@ export default function MappingStep() {
 
   const handleConfirm = () => {
     dispatch({ type: 'SET_SPEC', payload: { spec: editableSpec, validation } })
-    dispatch({ type: 'CONFIRM_GATE', payload: 3 })
+    dispatch({ type: 'CONFIRM_GATE', payload: 2 })
   }
 
   const gapCount = Object.values(confirmedValues).filter(
@@ -65,7 +65,7 @@ export default function MappingStep() {
   return (
     <div className="pipeline-step">
       <div className="ps-header">
-        <h3>Step 4 — Mapping Agent</h3>
+        <h3>Step 3 — Mapping Agent</h3>
         <p>Values are mapped into the template. Review and edit the live preview below.</p>
       </div>
 

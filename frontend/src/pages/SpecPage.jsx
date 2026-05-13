@@ -24,7 +24,7 @@ const TypeBadge = ({ type }) => {
 const TechTag = ({ label }) => (
   <span style={{
     fontSize: '10px', padding: '2px 7px', borderRadius: '4px',
-    background: 'var(--surface-hover, rgba(255,255,255,.07))', color: 'var(--text-secondary)',
+    background: 'var(--bg-elevated)', color: 'var(--text-secondary)',
     border: '1px solid var(--border)',
   }}>{label}</span>
 )

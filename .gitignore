@@ -13,3 +13,8 @@ spec_generator.db
 
 *.md
 /data
+backend.err
+backend.log
+app/.placeholder_presets.json
+_patch_agent.py
+_patch_extract.py

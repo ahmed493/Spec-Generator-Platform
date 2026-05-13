@@ -1,10 +1,10 @@
-import { FileText, Search, Map, Download, Check, Layers } from 'lucide-react'
+import { GitBranch, Search, Map, Download, Check, Layers } from 'lucide-react'
 
 const STEP_META = [
-  { label: 'Pipelines',  icon: Layers   },
-  { label: 'Template',   icon: FileText  },
+  { label: 'Pipelines',  icon: Layers    },
   { label: 'Extraction', icon: Search    },
   { label: 'Mapping',    icon: Map       },
+  { label: 'Diagram',    icon: GitBranch },
   { label: 'Export',     icon: Download  },
 ]
 
