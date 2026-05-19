@@ -603,6 +603,14 @@ async def disconnect(request: DisconnectRequest):
     if src not in connections:
         raise HTTPException(status_code=400, detail=f"Unknown source: {src}")
     connections[src] = None
+    # Remove from persistent cache so it doesn't auto-reconnect on restart
+    try:
+        if _CREDS_FILE.exists():
+            data = json.loads(_CREDS_FILE.read_text())
+            data.pop(src, None)
+            _CREDS_FILE.write_text(json.dumps(data, indent=2))
+    except Exception as exc:
+        logger.warning("Could not clear credentials for %s: %s", src, exc)
     return ConnectionStatus(source=src, connected=False, message=f"Disconnected from {src}")
 
 

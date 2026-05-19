@@ -4,13 +4,14 @@ import {
   CheckCircle, AlertCircle, Link2, FileText, Globe, AlignLeft,
   Github, Database, Cloud, BarChart3, HardDrive, BookOpen, FileSpreadsheet,
   Search, Unplug, ScrollText, Download, Copy, Check, BookMarked, Clock,
-  ChevronDown, ChevronRight, UploadCloud, FileUp, Pencil, Save,
+  ChevronDown, ChevronRight, UploadCloud, FileUp, Pencil, Save, Eye, EyeOff,
 } from 'lucide-react'
 import {
   getProjects, createProject, deleteProject,
   getProject, addProjectSource, removeProjectSource,
   getProjectApprovedSpecs,
-  getConnections,
+  getConnections, disconnectSource,
+  connectGitHub, connectPowerBI, connectPostgreSQL, connectBigQuery, connectGCS,
   getGitHubRepos, getBigQueryDatasets, getPostgreSQLSchemas,
   getPowerBIWorkspaces, getGCSBuckets,
   pipelineGetCatalog,
@@ -155,6 +156,52 @@ function AddSourceModal({ project, onClose, onAdded }) {
   const [selectedResource, setSelectedResource] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
 
+  // Inline connect form
+  const [showConnectForm, setShowConnectForm] = useState(false)
+  const [connectLoading, setConnectLoading] = useState(false)
+  const [connectError, setConnectError] = useState(null)
+  const [showSecrets, setShowSecrets] = useState({})
+  const [ghToken, setGhToken] = useState('')
+  const [pbiTenantId, setPbiTenantId] = useState('')
+  const [pbiClientId, setPbiClientId] = useState('')
+  const [pbiClientSecret, setPbiClientSecret] = useState('')
+  const [pgHost, setPgHost] = useState('')
+  const [pgPort, setPgPort] = useState(5432)
+  const [pgDatabase, setPgDatabase] = useState('')
+  const [pgUser, setPgUser] = useState('')
+  const [pgPassword, setPgPassword] = useState('')
+  const [cloudKeyContent, setCloudKeyContent] = useState('')
+
+  const toggleSecret = (field) => setShowSecrets(p => ({ ...p, [field]: !p[field] }))
+
+  const handleInlineConnect = async (e) => {
+    e.preventDefault()
+    setConnectLoading(true)
+    setConnectError(null)
+    try {
+      if (selected === 'github') await connectGitHub(ghToken)
+      else if (selected === 'powerbi') await connectPowerBI(pbiTenantId, pbiClientId, pbiClientSecret)
+      else if (selected === 'postgresql') await connectPostgreSQL(pgHost, pgPort, pgDatabase, pgUser, pgPassword)
+      else if (selected === 'bigquery') await connectBigQuery(cloudKeyContent)
+      else if (selected === 'gcs') await connectGCS(cloudKeyContent)
+      // Refresh connection status
+      const res = await getConnections()
+      setConnStatus(res.data || {})
+      setShowConnectForm(false)
+      // Auto-fetch resources
+      const t2 = getTypeInfo(selected)
+      setLoadingRes(true)
+      try {
+        const r = await t2.fetchFn()
+        setResources(t2.parseRes(r))
+      } catch { setError('Connected! But failed to load resources.') }
+      setLoadingRes(false)
+    } catch (err) {
+      setConnectError(err.response?.data?.detail || err.message)
+    }
+    setConnectLoading(false)
+  }
+
   // Fetch connection statuses on mount
   useEffect(() => {
     getConnections()
@@ -170,6 +217,9 @@ function AddSourceModal({ project, onClose, onAdded }) {
     setSelectedResource(null)
     setSearchQuery('')
     setSelectedFile(null)
+    setShowConnectForm(false)
+    setConnectError(null)
+    setCloudKeyContent('')
 
     const t = getTypeInfo(typeId)
     // If MCP-backed and connected, fetch resources
@@ -274,23 +324,136 @@ function AddSourceModal({ project, onClose, onAdded }) {
         {/* ── MCP-backed type: resource browser ── */}
         {isMcp && !isConnected && (
           <div className="src-config-section">
-            <div className="src-not-connected">
-              <Unplug size={18} />
-              <div>
-                <strong>{t.name} is not connected.</strong>
-                <p style={{ margin: '4px 0 0', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
-                  Go to the <strong>Connections</strong> page to set up this source first.
-                </p>
+            {!showConnectForm ? (
+              <div className="src-not-connected">
+                <Unplug size={18} />
+                <div>
+                  <strong>{t.name} is not connected.</strong>
+                  <p style={{ margin: '4px 0 8px', fontSize: 12.5, color: 'var(--text-tertiary)' }}>
+                    Connect now to browse and add resources.
+                  </p>
+                  <button className="btn btn-primary" style={{ fontSize: 12.5 }} onClick={() => setShowConnectForm(true)}>
+                    Connect {t.name}
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <form onSubmit={handleInlineConnect}>
+                <div className="src-config-head" style={{ marginBottom: 14 }}>
+                  {(() => { const I = t.icon; return <I size={16} /> })()}
+                  Connect {t.name}
+                </div>
+                {connectError && <div className="message error" style={{ marginBottom: 10 }}>{connectError}</div>}
+
+                {selected === 'github' && (
+                  <>
+                    <label>Personal Access Token</label>
+                    <div className="input-group">
+                      <input
+                        type={showSecrets.ghToken ? 'text' : 'password'}
+                        placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                        value={ghToken} onChange={e => setGhToken(e.target.value)} required
+                      />
+                      <button type="button" className="input-toggle" onClick={() => toggleSecret('ghToken')}>
+                        {showSecrets.ghToken ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                    <p className="form-hint">GitHub → Settings → Developer settings → Personal access tokens. Needs <code>repo</code> scope.</p>
+                  </>
+                )}
+
+                {selected === 'powerbi' && (
+                  <>
+                    <label>Tenant ID</label>
+                    <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={pbiTenantId} onChange={e => setPbiTenantId(e.target.value)} required />
+                    <label>Client ID</label>
+                    <input type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" value={pbiClientId} onChange={e => setPbiClientId(e.target.value)} required />
+                    <label>Client Secret</label>
+                    <div className="input-group">
+                      <input
+                        type={showSecrets.pbiSecret ? 'text' : 'password'}
+                        placeholder="Your client secret value"
+                        value={pbiClientSecret} onChange={e => setPbiClientSecret(e.target.value)} required
+                      />
+                      <button type="button" className="input-toggle" onClick={() => toggleSecret('pbiSecret')}>
+                        {showSecrets.pbiSecret ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                    <p className="form-hint">Azure AD App Registration with Power BI Service permissions.</p>
+                  </>
+                )}
+
+                {selected === 'postgresql' && (
+                  <>
+                    <label>Host</label>
+                    <input type="text" placeholder="localhost" value={pgHost} onChange={e => setPgHost(e.target.value)} required />
+                    <label>Port</label>
+                    <input type="number" placeholder="5432" value={pgPort} onChange={e => setPgPort(parseInt(e.target.value))} required />
+                    <label>Database</label>
+                    <input type="text" placeholder="postgres" value={pgDatabase} onChange={e => setPgDatabase(e.target.value)} required />
+                    <label>User</label>
+                    <input type="text" placeholder="postgres" value={pgUser} onChange={e => setPgUser(e.target.value)} required />
+                    <label>Password</label>
+                    <div className="input-group">
+                      <input
+                        type={showSecrets.pgPassword ? 'text' : 'password'}
+                        placeholder="Your database password"
+                        value={pgPassword} onChange={e => setPgPassword(e.target.value)} required
+                      />
+                      <button type="button" className="input-toggle" onClick={() => toggleSecret('pgPassword')}>
+                        {showSecrets.pgPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {(selected === 'bigquery' || selected === 'gcs') && (
+                  <>
+                    <label>Service Account JSON</label>
+                    <input
+                      type="file" accept="application/json"
+                      onChange={async e => {
+                        const f = e.target.files[0]
+                        if (f) setCloudKeyContent(await f.text())
+                      }}
+                      required
+                    />
+                    <p className="form-hint">Upload your Google Cloud service account JSON key.</p>
+                  </>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowConnectForm(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={connectLoading}>
+                    {connectLoading ? <><Loader2 size={14} className="spinner" /> Connecting…</> : 'Connect'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         )}
 
         {isMcp && isConnected && (
           <div className="src-config-section">
-            <div className="src-config-head">
-              {(() => { const I = t.icon; return <I size={16} /> })()}
-              Browse {t.name}
+            <div className="src-config-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {(() => { const I = t.icon; return <I size={16} /> })()}
+                Browse {t.name}
+              </span>
+              <button
+                className="btn btn-danger-outline"
+                style={{ fontSize: 11.5, padding: '3px 10px' }}
+                onClick={async () => {
+                  await disconnectSource(selected)
+                  const res = await getConnections()
+                  setConnStatus(res.data || {})
+                  setResources([])
+                  setSelectedResource(null)
+                  setShowConnectForm(true)
+                }}
+              >
+                <Unplug size={12} /> Switch account
+              </button>
             </div>
 
             {loadingRes && (

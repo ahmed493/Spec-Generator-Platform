@@ -1,4 +1,4 @@
-import { FolderKanban, Link2, ArrowLeft } from 'lucide-react'
+import { FolderKanban, ArrowLeft } from 'lucide-react'
 import { useProject } from '../context/ProjectContext'
 import ThemeToggle from './ThemeToggle'
 
@@ -6,7 +6,6 @@ const JEMS_GRADIENT = 'linear-gradient(105deg, #2a1a4e 0%, #7b1fa2 25%, #e91e8c 
 
 const NAV_ITEMS = [
   { id: 'projects', label: 'Projects', icon: FolderKanban },
-  { id: 'connections', label: 'Connections', icon: Link2 },
 ]
 
 export default function Sidebar() {
