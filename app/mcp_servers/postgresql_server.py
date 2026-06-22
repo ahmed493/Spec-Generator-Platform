@@ -4,7 +4,10 @@ Connects via host/port/user/password/dbname.
 Extracts schemas, tables, columns, views, indexes, and foreign keys.
 Uses psycopg2 for database connectivity.
 """
+import logging
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 class PostgreSQLMCPServer:
@@ -36,11 +39,11 @@ class PostgreSQLMCPServer:
             with self.conn.cursor() as cur:
                 cur.execute("SELECT version()")
                 version = cur.fetchone()[0]
-            print(f"✅ Connected to PostgreSQL: {version[:50]}")
+            logger.info("Connected to PostgreSQL: %s", version[:50])
             self.connected = True
             return True
         except Exception as e:
-            print(f"❌ Failed to connect to PostgreSQL: {e}")
+            logger.error("Failed to connect to PostgreSQL: %s", e)
             self.connected = False
             return False
 
@@ -54,7 +57,7 @@ class PostgreSQLMCPServer:
                 columns = [desc[0] for desc in cur.description]
                 return [dict(zip(columns, row)) for row in cur.fetchall()]
         except Exception as e:
-            print(f"❌ Query error: {e}")
+            logger.error("Query error: %s", e)
             return []
 
     def get_schemas(self) -> list[dict]:

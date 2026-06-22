@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56" width="56" height="56">
+  <defs>
+    <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFAA40"/>
+      <stop offset="45%" stop-color="#FF7055"/>
+      <stop offset="100%" stop-color="#FF3D82"/>
+    </linearGradient>
+  </defs>
+  <circle cx="28" cy="28" r="28" fill="url(#logoGrad)"/>
+  <!-- Three rounded bars (Maze-style icon) -->
+  <rect x="11.5" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+  <rect x="23.25" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+  <rect x="35" y="15" width="9.5" height="26" rx="4.75" fill="white"/>
+</svg>

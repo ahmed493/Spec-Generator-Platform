@@ -2,6 +2,30 @@
 Spec Generator Platform - Main Entry Point
 FastAPI application for generating specifications from data sources
 """
+import logging
+import logging.config
+
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "default": {
+            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            "datefmt": "%H:%M:%S",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "default",
+        }
+    },
+    "loggers": {
+        "app": {"level": "INFO", "handlers": ["console"], "propagate": False},
+    },
+    "root": {"level": "WARNING"},
+})
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router

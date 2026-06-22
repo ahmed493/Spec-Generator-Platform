@@ -247,7 +247,7 @@ function ConnectModal({ source, onClose, onSuccess }) {
             <button type="button" className="btn btn-secondary" onClick={onClose}>
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
+            <button type="submit" className="btn btn-filled" disabled={loading}>
               {loading ? (
                 <>
                   <Loader2 size={14} className="spinner" />
@@ -392,7 +392,7 @@ function ConnectionsPage() {
               {/* Connect button */}
               {source.available && !isConnected && (
                 <button
-                  className="btn btn-primary"
+                  className="btn btn-filled"
                   onClick={() => setConnectingSource(source)}
                 >
                   Connect

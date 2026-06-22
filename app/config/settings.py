@@ -1,40 +1,37 @@
 """
 Configuration settings for Spec Generator Platform
-Supports: Ollama (local), OpenAI, Anthropic
 """
-import os
 from pydantic_settings import BaseSettings
-from typing import Literal
+from pydantic import ConfigDict
 
 
 class Settings(BaseSettings):
+    # LLM Provider Selection
+    llm_provider: str = "openai"  # Options: "openai", "anthropic", "ollama"
+
     # GitHub
     github_token: str = ""
 
-    # LLM Provider
-    llm_provider: Literal["ollama", "openai", "anthropic", "huggingface"] = "ollama"
-
-    # Ollama (local)
-    ollama_model: str = "llama3.1"
-    ollama_base_url: str = "http://localhost:11434"
-
     # OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-4-turbo-preview"
+    openai_model: str = "gpt-4o-mini"
 
     # Anthropic
     anthropic_api_key: str = ""
-    anthropic_model: str = "claude-3-opus-20240229"
+    anthropic_model: str = "claude-3-sonnet-20240229"
 
-    # Hugging Face
-    huggingface_api_key: str = ""
-    huggingface_model: str = "HuggingFaceH4/zephyr-7b-beta"
+    # Ollama
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "mistral"
 
     # Database
     database_url: str = "sqlite:///./spec_generator.db"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore extra fields from .env
+    )
+
 
 settings = Settings()

@@ -9,15 +9,23 @@ spec-generator/
 ├── app/
 │   ├── main.py              # FastAPI entry point
 │   ├── api/
-│   │   └── routes.py        # API endpoints
+│   │   └── routes.py        # API endpoints (16+ vector store endpoints)
 │   ├── mcp_servers/
 │   │   └── github_server.py # MCP GitHub connector
 │   ├── agents/
 │   │   ├── llm_client.py    # LLM abstraction (Ollama/OpenAI/Claude)
 │   │   └── spec_agent.py    # Spec generation agent
+│   ├── vectorstore/         # NEW: Vector store & semantic search
+│   │   ├── vector_manager.py    # ChromaDB orchestrator
+│   │   ├── chunking_strategy.py # Intelligent chunking
+│   │   ├── embeddings.py        # Sentence Transformers
+│   │   └── retrieval.py         # Retrieval-Augmented Extraction
 │   └── config/
 │       └── settings.py      # Configuration
 ├── requirements.txt
+├── VECTOR_STORE_QUICKSTART.md    # NEW: Quick start guide
+├── VECTOR_STORE_GUIDE.md         # NEW: Comprehensive guide
+├── VECTOR_STORE_CONFIG.md        # NEW: Configuration options
 └── README.md
 ```
 

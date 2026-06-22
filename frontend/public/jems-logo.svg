@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="jemsGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#FFD43B"/>
+      <stop offset="45%"  stop-color="#FF7A3C"/>
+      <stop offset="100%" stop-color="#FF3CAC"/>
+    </linearGradient>
+    <clipPath id="circleClip">
+      <circle cx="100" cy="100" r="98"/>
+    </clipPath>
+    <filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#FF3CAC" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background circle with gradient -->
+  <circle cx="100" cy="100" r="98" fill="url(#jemsGrad)" filter="url(#softShadow)"/>
+
+  <!-- Left bar — tilted ~-10deg around its center -->
+  <rect
+    x="38" y="54"
+    width="30" height="88"
+    rx="15" ry="15"
+    fill="white"
+    fill-opacity="0.97"
+    transform="rotate(-10 53 98)"
+  />
+
+  <!-- Middle bar — straight up -->
+  <rect
+    x="85" y="48"
+    width="30" height="95"
+    rx="15" ry="15"
+    fill="white"
+    fill-opacity="0.97"
+  />
+
+  <!-- Right bar — tilted ~+10deg around its center -->
+  <rect
+    x="132" y="54"
+    width="30" height="88"
+    rx="15" ry="15"
+    fill="white"
+    fill-opacity="0.97"
+    transform="rotate(10 147 98)"
+  />
+</svg>

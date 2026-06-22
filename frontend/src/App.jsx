@@ -1,66 +1,83 @@
-import { useState } from 'react'
-import { Link2, FolderSearch, FileText, Zap } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { ProjectProvider, useProject } from './context/ProjectContext'
+import Sidebar from './components/Sidebar'
+import ChatPanel from './components/ChatPanel'
+import ProjectsPage from './pages/ProjectsPage'
 import ConnectionsPage from './pages/ConnectionsPage'
-import ExplorerPage from './pages/ExplorerPage'
-import SpecPage from './pages/SpecPage'
+import PipelinePage from './pages/PipelinePage'
+import LandingPage from './pages/LandingPage'
 
-import ChatbotPanel from './pages/ChatbotPanel'
+function AppContent({ initialPage }) {
+  const { state, dispatch } = useProject()
+  const { currentPage } = state
 
-const pages = [
-  { id: 'connections', label: 'Connections', icon: Link2 },
-  { id: 'explorer', label: 'Explorer', icon: FolderSearch },
-  { id: 'spec', label: 'Generate Spec', icon: FileText },
-  { id: 'chat', label: 'Chatbot', icon: Zap },
-]
-
-function App() {
-  const [currentPage, setCurrentPage] = useState('connections')
+  // Navigate to the page the user clicked from the landing screen
+  useEffect(() => {
+    if (initialPage && initialPage !== 'projects') {
+      dispatch({ type: 'SET_PAGE', payload: initialPage })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const renderPage = () => {
     switch (currentPage) {
+      case 'projects':
+        return <ProjectsPage />
       case 'connections':
         return <ConnectionsPage />
-      case 'explorer':
-        return <ExplorerPage />
-      case 'spec':
-        return <SpecPage />
-      case 'chat':
-        return <ChatbotPanel />
+      case 'pipeline':
+        return <PipelinePage />
       default:
-        return <ConnectionsPage />
+        return <ProjectsPage />
     }
   }
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="sidebar-brand">
-          <div className="brand-icon">
-            <Zap size={16} />
-          </div>
-          <h1>Spec Generator</h1>
-        </div>
-        <div className="sidebar-divider" />
-        <nav>
-          {pages.map((page) => {
-            const Icon = page.icon
-            return (
-              <button
-                key={page.id}
-                className={currentPage === page.id ? 'active' : ''}
-                onClick={() => setCurrentPage(page.id)}
-              >
-                <Icon size={16} />
-                {page.label}
-              </button>
-            )
-          })}
-        </nav>
-      </aside>
-      <main className="main-content">
+      <Sidebar />
+      <main className="main-content" key={currentPage}>
         {renderPage()}
       </main>
+      <ChatPanel />
     </div>
+  )
+}
+
+function App() {
+  const [entered, setEntered] = useState(false)
+  const [dark, setDark] = useState(true)
+  const [initialPage, setInitialPage] = useState('projects')
+
+  // Keep data-theme in sync with the dark toggle (works for landing AND platform)
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
+    localStorage.setItem('theme', dark ? 'dark' : 'light')
+  }, [dark])
+
+  // Restore persisted preference on first load
+  useEffect(() => {
+    const saved = localStorage.getItem('theme')
+    if (saved === 'light') setDark(false)
+  }, [])
+
+  const handleEnter = (page = 'projects') => {
+    setInitialPage(page)
+    setEntered(true)
+  }
+
+  if (!entered) {
+    return (
+      <LandingPage
+        onEnter={handleEnter}
+        dark={dark}
+        toggleTheme={() => setDark(d => !d)}
+      />
+    )
+  }
+
+  return (
+    <ProjectProvider>
+      <AppContent initialPage={initialPage} />
+    </ProjectProvider>
   )
 }
 
