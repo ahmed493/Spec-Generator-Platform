@@ -166,6 +166,54 @@ class GitHubMCPServer:
         )
         return results
 
+    def push_file(
+        self,
+        owner: str,
+        repo_name: str,
+        file_path: str,
+        content: str,
+        commit_message: str,
+        branch: str = "main",
+    ) -> dict:
+        """Create or update a single file in a repository.
+
+        Uses PyGithub's create_file / update_file under the hood.
+        Returns a dict with keys: action ('created'|'updated'), path, commit_sha.
+        """
+        repo = self.get_repo(owner, repo_name)
+        if not repo:
+            raise Exception(f"Repository {owner}/{repo_name} not found or inaccessible")
+
+        content_bytes = content.encode("utf-8")
+
+        try:
+            existing = repo.get_contents(file_path, ref=branch)
+            result = repo.update_file(
+                path=file_path,
+                message=commit_message,
+                content=content_bytes,
+                sha=existing.sha,
+                branch=branch,
+            )
+            return {
+                "action": "updated",
+                "path": file_path,
+                "commit_sha": result["commit"].sha,
+            }
+        except Exception:
+            # File does not exist yet — create it
+            result = repo.create_file(
+                path=file_path,
+                message=commit_message,
+                content=content_bytes,
+                branch=branch,
+            )
+            return {
+                "action": "created",
+                "path": file_path,
+                "commit_sha": result["commit"].sha,
+            }
+
     def search_code_in_repo(
         self,
         owner: str,

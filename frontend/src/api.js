@@ -7,6 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 120000, // 2 min default timeout for all requests
 })
 
 // Health
@@ -44,10 +45,7 @@ export const getPowerBIDataflows = (workspaceId) =>
 export const getPowerBIWorkspaceMetadata = (workspaceId) =>
   api.post('/powerbi/workspace-metadata', { workspace_id: workspaceId })
 
-// Spec Generation
-export const generateSpec = (owner, repoName) =>
-  api.post('/generate-spec', { owner, repo_name: repoName })
-
+// Spec Generation (via OrchestratorAgent)
 export const generateSpecFromTemplate = (repoList, templateFile, pipeline = null) => {
   // repoList: [{owner, repo_name}, ...]
   const formData = new FormData()
@@ -69,10 +67,6 @@ export const detectPipelines = (repoList) => {
     headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
-
-// Chat
-export const chat = (question, repoName = null) =>
-  api.post('/chat', { question, repo_name: repoName })
 
 // ================= PLACEHOLDER PRESETS =================
 export const getPlaceholderPresets = () => api.get('/placeholder-presets')
@@ -138,13 +132,13 @@ export const pipelineTemplate = (projectId, templateFile) => {
   })
 }
 export const pipelineExtract = (projectId, placeholders) =>
-  api.post(`/projects/${projectId}/pipeline/extract`, { placeholders })
+  api.post(`/projects/${projectId}/pipeline/extract`, { placeholders }, { timeout: 600000 }) // 10 min timeout for extraction
 export const pipelineMap = (projectId, values) =>
-  api.post(`/projects/${projectId}/pipeline/map`, { values })
+  api.post(`/projects/${projectId}/pipeline/map`, { values }, { timeout: 300000 }) // 5 min timeout for mapping
 export const pipelineDiagram = (projectId) =>
   api.post(`/projects/${projectId}/pipeline/diagram`)
-export const pipelineExport = (projectId, format = 'markdown') =>
-  api.post(`/projects/${projectId}/pipeline/export`, { format })
+export const pipelineExport = (projectId, format = 'markdown', axiosConfig = {}) =>
+  api.post(`/projects/${projectId}/pipeline/export`, { format }, axiosConfig)
 export const pipelineGetState = (projectId) =>
   api.get(`/projects/${projectId}/pipeline/state`)
 export const pipelineGetSpecVersions = (projectId) =>
@@ -156,6 +150,12 @@ export const pipelineDiffSpecVersions = (projectId, fromVersionId, toVersionId) 
   })
 export const pipelinePromoteSpecVersion = (projectId, versionId) =>
   api.post(`/projects/${projectId}/pipeline/spec-versions/${versionId}/promote`)
+export const pipelineApproveDiagram = (projectId, fluxName, mermaidCode) =>
+  api.post(`/projects/${projectId}/pipeline/diagram/approve`, { flux_name: fluxName, mermaid_code: mermaidCode })
+export const pipelineGetApprovedDiagrams = (projectId) =>
+  api.get(`/projects/${projectId}/pipeline/approved-diagrams`)
+export const pipelinePushToGitHub = (projectId, repoFullName, branch = 'main', folderPath = 'specs') =>
+  api.post(`/projects/${projectId}/export/push-github`, { repo_full_name: repoFullName, branch, folder_path: folderPath })
 
 // ================= PROJECT CHAT =================
 export const projectChat = (projectId, question, pipelineStep = '', placeholders = [], extractedValues = {}) =>

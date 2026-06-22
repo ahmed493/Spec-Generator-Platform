@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
-import { GitBranch, RefreshCw, Download, Copy, Check, AlertTriangle } from 'lucide-react'
+import { GitBranch, RefreshCw, Download, Copy, Check, AlertTriangle, BookmarkCheck } from 'lucide-react'
 import { useProject } from '../../context/ProjectContext'
-import { pipelineDiagram } from '../../api'
+import { pipelineDiagram, pipelineApproveDiagram } from '../../api'
 import ValidationGate from '../../components/ValidationGate'
 
 export default function DiagramStep() {
@@ -12,10 +12,13 @@ export default function DiagramStep() {
   const [code, setCode] = useState(diagramCode || '')
   const [editMode, setEditMode] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
   const diagramRef = useRef(null)
   const mermaidRef = useRef(null)
 
   const confirmed = gates[3]
+  const fluxName = selectedPipeline?.name || project?.name || 'pipeline'
 
   // Load mermaid from CDN once
   useEffect(() => {
@@ -75,12 +78,25 @@ export default function DiagramStep() {
     setLoading(false)
   }
 
+  const handleApproveDiagram = async () => {
+    if (!project || !code) return
+    setSaving(true)
+    try {
+      const res = await pipelineApproveDiagram(project.id, fluxName, code)
+      dispatch({ type: 'ADD_APPROVED_DIAGRAM', payload: res.data })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Could not save diagram.')
+    }
+    setSaving(false)
+  }
+
   const handleConfirm = () => {
     dispatch({ type: 'CONFIRM_GATE', payload: 3 })
   }
 
   const handleSkip = () => {
-    // Mark gate 3 as confirmed and advance without generating a diagram
     dispatch({ type: 'CONFIRM_GATE', payload: 3 })
   }
 
@@ -98,7 +114,7 @@ export default function DiagramStep() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `${project?.name?.replace(/\s+/g, '_') || 'pipeline'}_diagram.svg`
+    a.download = `${fluxName.replace(/\s+/g, '_')}_diagram.svg`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -140,6 +156,17 @@ export default function DiagramStep() {
             >
               <RefreshCw size={14} /> Regenerate
             </button>
+            {code && (
+              <button
+                className="btn btn-primary"
+                onClick={handleApproveDiagram}
+                disabled={saving || !code}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}
+              >
+                {saved ? <Check size={14} /> : <BookmarkCheck size={14} />}
+                {saved ? 'Saved!' : saving ? 'Saving…' : 'Approve & Save'}
+              </button>
+            )}
           </div>
         </div>
       </div>

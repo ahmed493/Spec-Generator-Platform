@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Map, Loader2, Eye } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Map, Loader2, Eye, RefreshCw } from 'lucide-react'
 import { useProject } from '../../context/ProjectContext'
 import { pipelineMap } from '../../api'
 import ValidationGate from '../../components/ValidationGate'
@@ -11,6 +11,8 @@ export default function MappingStep() {
   const [error, setError] = useState(null)
   const [editableSpec, setEditableSpec] = useState(spec)
   const [hoveredPlaceholder, setHoveredPlaceholder] = useState(null)
+  // Guard against duplicate concurrent runs (React StrictMode double-mount, double-clicks)
+  const runningRef = useRef(false)
 
   const confirmed = gates[2]
 
@@ -25,7 +27,8 @@ export default function MappingStep() {
   }, [spec])
 
   const runMapping = async () => {
-    if (!project) return
+    if (!project || runningRef.current) return
+    runningRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -39,9 +42,13 @@ export default function MappingStep() {
         },
       })
     } catch (err) {
-      setError(err.response?.data?.detail || 'Mapping failed.')
+      setError(
+        err.response?.data?.detail || err.response?.data?.message || err.message || 'Mapping failed.'
+      )
+    } finally {
+      runningRef.current = false
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleConfirm = () => {
@@ -67,6 +74,17 @@ export default function MappingStep() {
       <div className="ps-header">
         <h3>Step 3 — Mapping Agent</h3>
         <p>Values are mapped into the template. Review and edit the live preview below.</p>
+      </div>
+
+      <div className="ps-actions">
+        <button
+          className="btn-secondary"
+          onClick={runMapping}
+          disabled={loading || confirmed || Object.keys(confirmedValues).length === 0}
+        >
+          {loading ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+          Re-map
+        </button>
       </div>
 
       {error && <div className="message error">{error}</div>}

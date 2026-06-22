@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Search, Loader2, AlertTriangle, RefreshCw, Pencil, Table2 } from 'lucide-react'
 import { useProject } from '../../context/ProjectContext'
 import { pipelineExtract } from '../../api'
@@ -107,6 +107,8 @@ export default function ExtractionStep() {
   const [error, setError] = useState(null)
   const [results, setResults] = useState(extractionResults)
   const [tableEditIndices, setTableEditIndices] = useState(new Set())
+  // Guard against duplicate concurrent runs (React StrictMode double-mount, double-clicks)
+  const runningRef = useRef(false)
 
   const toggleTableEdit = (idx) => {
     setTableEditIndices(prev => {
@@ -126,7 +128,8 @@ export default function ExtractionStep() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runExtraction = async () => {
-    if (!project) return
+    if (!project || runningRef.current) return
+    runningRef.current = true
     setLoading(true)
     setError(null)
     try {
@@ -135,8 +138,10 @@ export default function ExtractionStep() {
       dispatch({ type: 'SET_EXTRACTION_RESULTS', payload: res.data.results || [] })
     } catch (err) {
       setError(err.response?.data?.detail || 'Extraction failed.')
+    } finally {
+      runningRef.current = false
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const updateValue = (idx, value) => {

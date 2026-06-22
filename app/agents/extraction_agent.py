@@ -759,7 +759,22 @@ class ExtractionAgent:
     def _is_not_found(self, value: str) -> bool:
         if not value or not value.strip():
             return True
-        return bool(self._NOT_FOUND_RE.match(value.strip()))
+        v = value.strip()
+        # Handle JSON-encoded list/table: ["NOT_FOUND"], [], {}
+        if v.startswith(("[", "{")):
+            try:
+                parsed = json.loads(v)
+                if not parsed:          # empty [] or {}
+                    return True
+                if isinstance(parsed, list):
+                    # all elements are NOT_FOUND-like strings
+                    return all(
+                        isinstance(e, str) and bool(self._NOT_FOUND_RE.match(e.strip()))
+                        for e in parsed
+                    )
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return bool(self._NOT_FOUND_RE.match(v))
 
     def _run_retry_batch(self, fields: list[dict], pipeline_context: str,
                          all_files_text: str) -> dict[str, str]:
@@ -1005,7 +1020,16 @@ class ExtractionAgent:
                 if fid not in data:
                     continue
                 v = data[fid]
-                if isinstance(v, (list, dict)):
+                if isinstance(v, list):
+                    # Normalize ["NOT_FOUND"] / [] to the canonical string
+                    if not v or all(
+                        isinstance(e, str) and bool(self._NOT_FOUND_RE.match(e.strip()))
+                        for e in v
+                    ):
+                        result[fid] = "NOT_FOUND"
+                    else:
+                        result[fid] = json.dumps(v, ensure_ascii=False)
+                elif isinstance(v, dict):
                     result[fid] = json.dumps(v, ensure_ascii=False)
                 else:
                     result[fid] = str(v)

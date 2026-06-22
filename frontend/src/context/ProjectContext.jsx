@@ -30,6 +30,7 @@ const initialState = {
   specVersions: [],
   approvedVersionId: null,
   diagramCode: '',
+  approvedDiagrams: [],
   // Chat
   chatOpen: false,
   chatHistory: [],
@@ -57,6 +58,7 @@ function reducer(state, action) {
         specVersions: [],
         approvedVersionId: null,
         diagramCode: '',
+        approvedDiagrams: [],
         chatHistory: [],
       }
     case 'SET_PROJECT':
@@ -98,6 +100,7 @@ function reducer(state, action) {
         specVersions: [],
         approvedVersionId: null,
         diagramCode: '',
+        approvedDiagrams: [],
         chatHistory: [],
       }
     }
@@ -139,6 +142,12 @@ function reducer(state, action) {
       }
     case 'SET_DIAGRAM':
       return { ...state, diagramCode: action.payload }
+    case 'SET_APPROVED_DIAGRAMS':
+      return { ...state, approvedDiagrams: action.payload }
+    case 'ADD_APPROVED_DIAGRAM': {
+      const existing = state.approvedDiagrams.filter(d => d.flux_name !== action.payload.flux_name)
+      return { ...state, approvedDiagrams: [action.payload, ...existing] }
+    }
     case 'SET_SPEC_VERSIONS':
       return { ...state, specVersions: action.payload }
     case 'SET_APPROVED_VERSION':

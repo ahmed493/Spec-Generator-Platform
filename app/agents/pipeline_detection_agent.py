@@ -777,7 +777,8 @@ class PipelineDetectionAgent:
             if ch in ('"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'):
                 return m.group(0)  # valid — keep as-is
             return '\\\\' + ch    # double-escape it
-        text = re.sub(r'\\([^"\\\//bfnrtu])', fix_escapes, text)
+        # Match backslash followed by any character that's NOT a valid JSON escape
+        text = re.sub(r'\\([^"\\\/bfnrtu])', fix_escapes, text)
         # Fix trailing commas
         text = re.sub(r',\s*([}\]])', r'\1', text)
         return text

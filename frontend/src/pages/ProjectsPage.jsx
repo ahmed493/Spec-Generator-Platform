@@ -5,11 +5,13 @@ import {
   Github, Database, Cloud, BarChart3, HardDrive, BookOpen, FileSpreadsheet,
   Search, Unplug, ScrollText, Download, Copy, Check, BookMarked, Clock,
   ChevronDown, ChevronRight, UploadCloud, FileUp, Pencil, Save, Eye, EyeOff,
+  GitBranch,
 } from 'lucide-react'
 import {
-  getProjects, createProject, deleteProject,
+  getProjects, createProject, deleteProject, updateProject,
   getProject, addProjectSource, removeProjectSource,
   getProjectApprovedSpecs,
+  pipelineGetApprovedDiagrams,
   getConnections, disconnectSource,
   connectGitHub, connectPowerBI, connectPostgreSQL, connectBigQuery, connectGCS,
   getGitHubRepos, getBigQueryDatasets, getPostgreSQLSchemas,
@@ -72,6 +74,69 @@ const SOURCE_TYPES = [
 
 function getTypeInfo(id) {
   return SOURCE_TYPES.find(t => t.id === id) || SOURCE_TYPES[0]
+}
+
+/* ============================================================
+   RENAME PROJECT MODAL
+============================================================ */
+function RenameProjectModal({ projectId, currentName, onClose, onRenamed }) {
+  const [newName, setNewName] = useState(currentName)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async () => {
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      setError('Project name cannot be empty')
+      return
+    }
+    if (trimmed === currentName) {
+      onClose()
+      return
+    }
+    setLoading(true)
+    try {
+      await updateProject(projectId, { name: trimmed })
+      onRenamed()
+      onClose()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to rename project')
+    }
+    setLoading(false)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 420 }}>
+        <div className="modal-header">
+          <div className="modal-title-row">
+            <h3>Rename Project</h3>
+          </div>
+          <button className="modal-close" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="modal-body" style={{ gap: 12 }}>
+          <input
+            type="text"
+            autoFocus
+            value={newName}
+            onChange={e => { setNewName(e.target.value); setError('') }}
+            onKeyDown={e => { if (e.key === 'Enter') handleSubmit() }}
+            placeholder="Project name"
+            style={{ width: '100%' }}
+            disabled={loading}
+          />
+          {error && <div style={{ fontSize: 12, color: 'var(--danger)', padding: '6px 0' }}>{error}</div>}
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-secondary" onClick={onClose} disabled={loading}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={loading || !newName.trim()}>
+            {loading ? <Loader2 size={14} className="spin" /> : <Check size={14} />}
+            Rename
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 /* ============================================================
@@ -911,6 +976,7 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
   const [message, setMessage] = useState(null)
   const [approvedSpecs, setApprovedSpecs] = useState([])
   const [specsLoading, setSpecsLoading] = useState(true)
+  const [approvedDiagrams, setApprovedDiagrams] = useState([])
   const [viewingSpec, setViewingSpec] = useState(null)
   const [copied, setCopied] = useState(false)
   const [catalogSnapshots, setCatalogSnapshots] = useState([])
@@ -964,6 +1030,9 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
       .then(res => setApprovedSpecs(res.data.approved_specs || []))
       .catch(() => setApprovedSpecs([]))
       .finally(() => setSpecsLoading(false))
+    pipelineGetApprovedDiagrams(project.id)
+      .then(res => setApprovedDiagrams(res.data.diagrams || []))
+      .catch(() => setApprovedDiagrams([]))
   }, [project.id])
 
   useEffect(() => {
@@ -1216,6 +1285,61 @@ function ProjectWorkspace({ project, onBack, onRefresh, onStartPipeline, onLoadF
         )}
       </div>
 
+      {/* ── Approved Diagrams ── */}
+      <div className="pd-section pd-anim" style={{ '--delay': '220ms' }}>
+        <div className="pd-section-header">
+          <div className="pd-section-left">
+            <GitBranch size={16} className="pd-section-icon" />
+            <span className="pd-section-title">Approved Diagrams</span>
+            {approvedDiagrams.length > 0 && <span className="pd-count-badge">{approvedDiagrams.length}</span>}
+          </div>
+        </div>
+
+        {approvedDiagrams.length === 0 && (
+          <div className="pd-empty">
+            <div className="pd-empty-icon"><GitBranch size={22} /></div>
+            <div className="pd-empty-title">No approved diagrams yet</div>
+            <p className="pd-empty-sub">
+              Run the pipeline wizard, generate a diagram in Step 4, and click <strong>Approve &amp; Save</strong>.
+            </p>
+          </div>
+        )}
+
+        {approvedDiagrams.length > 0 && (
+          <div className="pd-specs-list">
+            {approvedDiagrams.map((d, i) => (
+              <div key={i} className="pd-spec-row">
+                <span className="pd-badge pd-badge--green">approved</span>
+                <div className="pd-spec-meta">
+                  <span className="pd-spec-name">{d.flux_name}</span>
+                  {d.approved_at && (
+                    <span className="pd-spec-date">
+                      {new Date(d.approved_at).toLocaleString('en-US', {
+                        month: 'short', day: 'numeric', year: 'numeric',
+                        hour: '2-digit', minute: '2-digit',
+                      })}
+                    </span>
+                  )}
+                </div>
+                <div className="pd-spec-actions">
+                  <button className="pd-btn-ghost" onClick={() => {
+                    const blob = new Blob([d.mermaid_code], { type: 'text/plain' })
+                    const url = URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `${d.flux_name.replace(/\s+/g, '_')}.mmd`
+                    a.click()
+                    URL.revokeObjectURL(url)
+                  }}>
+                    <Download size={13} /> .mmd
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* ── Detected Pipelines Catalog ── */}
       <div className="pd-section pd-anim" style={{ '--delay': '240ms' }}>
         <div className="pd-section-header">
@@ -1422,6 +1546,7 @@ function ProjectsPage() {
   const [openProject, setOpenProject] = useState(null)
   const [message, setMessage] = useState(null)
   const [deleting, setDeleting] = useState(null)
+  const [renameId, setRenameId] = useState(null)
   const [listVisible, setListVisible] = useState(false)
 
   const fetchProjects = async () => {
@@ -1464,6 +1589,11 @@ function ProjectsPage() {
     }
     setDeleting(null)
     setTimeout(() => setMessage(null), 3000)
+  }
+
+  const handleRename = (e, pid) => {
+    e.stopPropagation()
+    setRenameId(pid)
   }
 
   /* ── Project Detail view ── */
@@ -1570,6 +1700,14 @@ function ProjectsPage() {
                     </button>
                     <button
                       className="pl-delete-btn"
+                      onClick={e => handleRename(e, p.id)}
+                      disabled={renameId !== null}
+                      title="Rename project"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    <button
+                      className="pl-delete-btn"
                       onClick={e => handleDelete(e, p.id)}
                       disabled={deleting === p.id}
                       title="Delete project"
@@ -1588,6 +1726,15 @@ function ProjectsPage() {
         <NewProjectModal
           onClose={() => setShowModal(false)}
           onCreated={proj => { setShowModal(false); setOpenProjectId(proj.id); fetchProjects() }}
+        />
+      )}
+
+      {renameId && (
+        <RenameProjectModal
+          projectId={renameId}
+          currentName={projects.find(p => p.id === renameId)?.name || ''}
+          onClose={() => setRenameId(null)}
+          onRenamed={() => { setMessage({ type: 'success', text: 'Project renamed' }); fetchProjects(); setTimeout(() => setMessage(null), 3000) }}
         />
       )}
     </div>

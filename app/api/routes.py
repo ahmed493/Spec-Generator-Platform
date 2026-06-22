@@ -10,7 +10,6 @@ from app.mcp_servers.powerbi_server import PowerBIMCPServer
 from app.mcp_servers.bigquery_server import BigQueryMCPServer
 from app.mcp_servers.postgresql_server import PostgreSQLMCPServer
 from app.mcp_servers.gcs_server import GCSMCPServer
-from app.agents.spec_agent import SpecAgent
 from app.agents.orchestrator_agent import OrchestratorAgent
 from app.agents.pipeline_detection_agent import PipelineDetectionAgent
 from app.config.settings import settings
@@ -22,6 +21,7 @@ import difflib
 import logging
 import uuid as _uuid
 import time as _time
+import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime as _dt
 
@@ -374,11 +374,6 @@ class PostgreSQLSchemaRequest(BaseModel):
     schema: str = "public"
 
 
-class RepoRequest(BaseModel):
-    owner: str
-    repo_name: str
-
-
 class WorkspaceRequest(BaseModel):
     workspace_id: str
 
@@ -391,11 +386,6 @@ class DatasetRequest(BaseModel):
 class ReportPagesRequest(BaseModel):
     workspace_id: str
     report_id: str
-
-
-class ChatRequest(BaseModel):
-    question: str
-    repo_name: Optional[str] = None
 
 
 class DisconnectRequest(BaseModel):
@@ -474,7 +464,18 @@ class ProjectChatRequest(BaseModel):
 
 
 class ExportRequest(BaseModel):
-    format: str = "markdown"  # markdown, json
+    format: str = "markdown"  # markdown, json, pdf
+
+
+class ApproveDiagramRequest(BaseModel):
+    flux_name: str
+    mermaid_code: str
+
+
+class GitHubPushRequest(BaseModel):
+    repo_full_name: str   # "owner/repo"
+    branch: str = "main"
+    folder_path: str = "specs"
 
 
 # ============== VECTOR STORE REQUEST/RESPONSE MODELS ==============
@@ -985,24 +986,6 @@ def _collect_datasource_context() -> str:
     return "\n".join(parts)
 
 
-# ============== SPEC GENERATION ENDPOINTS ==============
-
-@router.post("/generate-spec")
-async def generate_spec(request: RepoRequest):
-    """Generate a specification document from a GitHub repository"""
-    if not connections["github"]:
-        raise HTTPException(status_code=400, detail="Not connected to GitHub")
-
-    metadata = connections["github"].get_repo_metadata(request.owner, request.repo_name)
-    if not metadata:
-        raise HTTPException(status_code=404, detail="Repository not found")
-
-    agent = SpecAgent()
-    spec = agent.generate_spec(metadata)
-    specs_cache[request.repo_name] = spec
-    return {"repo_name": request.repo_name, "spec": spec}
-
-
 # ============== PIPELINE DETECTION ENDPOINT ==============
 
 @router.post("/detect-pipelines")
@@ -1178,31 +1161,6 @@ async def generate_spec_from_template(
         "fields": result.get("fields", []),
         "extracted_values": result.get("extracted_values", {}),
         "validation": result["validation"],
-    }
-
-
-# ============== CHAT ENDPOINTS ==============
-
-@router.post("/chat")
-async def chat(request: ChatRequest):
-    """Chat with the AI about specifications and data contracts, with chat history support"""
-    context = ""
-    if request.repo_name and request.repo_name in specs_cache:
-        context = specs_cache[request.repo_name]
-    elif specs_cache:
-        context = "\n\n---\n\n".join(specs_cache.values())
-
-    agent = SpecAgent()
-    chat_result = agent.chat(
-        question=request.question,
-        user_id="anonymous",
-        repo_name=request.repo_name,
-        context=context
-    )
-    return {
-        "question": request.question,
-        "response": chat_result["answer"],
-        "history": chat_result["history"]
     }
 
 
@@ -2371,9 +2329,17 @@ async def pipeline_step_extract(
     else:
         # Fallback: build minimal metadata from source content
         source_content = _get_source_content_for_project(project_id, db)
+        # Extract owner/repo from the project's GitHub source config so the
+        # GitHubMCPFetcher can be initialised even without a cached repo_metadata
+        gh_owner, gh_repo = "", ""
+        for src in _projects.get(project_id, {}).get("sources", []):
+            if src.get("type") == "github":
+                gh_owner = src.get("config", {}).get("owner", "")
+                gh_repo = src.get("config", {}).get("repo", "")
+                break
         metadata = {
-            "repo_name": p.name,
-            "owner": "",
+            "repo_name": gh_repo or p.name,
+            "owner": gh_owner,
             "description": p.description or "",
             "readme": source_content,
             "languages": "",
@@ -2489,11 +2455,26 @@ async def pipeline_step_extract(
             "introuvable", "absent", "not available", "not present",
             "not specified", "not mentioned", "no information",
         }
+        # Also detect JSON-encoded list/empty: ["NOT_FOUND"], [], {}
+        _json_not_found = False
+        if lower_val.startswith(("[", "{")):
+            try:
+                _parsed = json.loads(value)
+                if not _parsed:
+                    _json_not_found = True
+                elif isinstance(_parsed, list) and all(
+                    isinstance(e, str) and e.strip().lower() in _NOT_FOUND_TERMS
+                    for e in _parsed
+                ):
+                    _json_not_found = True
+            except Exception:
+                pass
         is_not_found = (
             not lower_val
             or lower_val in _NOT_FOUND_TERMS
             or lower_val.startswith("not_found")
             or lower_val.startswith("not found")
+            or _json_not_found
         )
         if is_not_found:
             confidence = "low"
@@ -2527,44 +2508,65 @@ async def pipeline_step_map(
     db=Depends(get_db),
 ):
     """Step 3: With confirmed values, compose the final spec via MappingAgent."""
-    p = db.query(Project).filter(Project.id == project_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Project not found")
-    state = _pipeline_state.get(project_id)
-    if not state:
-        raise HTTPException(status_code=400, detail="Run extract step first.")
+    try:
+        p = db.query(Project).filter(Project.id == project_id).first()
+        if not p:
+            raise HTTPException(status_code=404, detail="Project not found")
+        state = _pipeline_state.get(project_id)
+        if not state:
+            raise HTTPException(status_code=400, detail="Run template step first.")
+        if not state.get("template_text"):
+            raise HTTPException(status_code=400, detail="Run template step first.")
+        if not state.get("placeholders"):
+            raise HTTPException(status_code=400, detail="Run extract step first.")
 
-    state["values"] = req.values
-    state["step"] = "map"
+        state["values"] = req.values
+        state["step"] = "map"
 
-    from app.agents.mapping_agent import MappingAgent
-    agent = MappingAgent()
-    spec = agent.compose(
-        template_text=state["template_text"],
-        extracted_values=req.values,
-        fields=state["placeholders"],
-    )
+        # Log the compose start
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"[MAPPING] Starting compose for project {project_id}")
 
-    # Run validation
-    from app.agents.validation_agent import ValidationAgent
-    validator = ValidationAgent()
-    validation = validator.validate(state["placeholders"], req.values)
+        from app.agents.mapping_agent import MappingAgent
+        agent = MappingAgent()
+        spec = agent.compose(
+            template_text=state["template_text"],
+            extracted_values=req.values,
+            fields=state["placeholders"],
+        )
 
-    state["spec"] = spec
-    state["validation"] = validation
-    version = _create_spec_version(project_id, state, spec, validation)
-    _persist_state()
+        logger.info(f"[MAPPING] Compose completed, spec length: {len(spec)}")
 
-    return {
-        "spec": spec,
-        "validation": validation,
-        "version": {
-            "id": version["id"],
-            "version_number": version["version_number"],
-            "status": version["status"],
-            "created_at": version["created_at"],
-        },
-    }
+        # Run validation
+        logger.info(f"[MAPPING] Starting validation")
+        from app.agents.validation_agent import ValidationAgent
+        validator = ValidationAgent()
+        validation = validator.validate(state["placeholders"], req.values)
+        logger.info(f"[MAPPING] Validation completed")
+
+        state["spec"] = spec
+        state["validation"] = validation
+        version = _create_spec_version(project_id, state, spec, validation)
+        _persist_state()
+
+        return {
+            "spec": spec,
+            "validation": validation,
+            "version": {
+                "id": version["id"],
+                "version_number": version["version_number"],
+                "status": version["status"],
+                "created_at": version["created_at"],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"[MAPPING] Error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Mapping failed: {str(e)}")
 
 
 # ============== VECTOR STORE ENDPOINTS ==============
@@ -2917,60 +2919,119 @@ async def embed_github_repository(
 
 @router.post("/projects/{project_id}/pipeline/diagram")
 async def pipeline_step_diagram(project_id: str, db=Depends(get_db)):
-    """Step 4 (Diagram): Generate a mermaid flowchart from extraction + pipeline data."""
+    """Step 4 (Diagram): Use LLM to generate a Mermaid data-flow diagram from the extracted values."""
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Project not found")
 
     state = _pipeline_state.get(project_id, {})
     pipeline = state.get("selected_pipeline") or {}
-    confirmed_values: dict = state.get("confirmed_values") or {}
+    confirmed_values: dict = state.get("values") or {}
     placeholders: list = state.get("placeholders") or []
-    sources = p.sources if hasattr(p, "sources") else []
-
-    # ── Build mermaid flowchart from available data ──────────────────────────
-    lines = ["flowchart LR"]
-
-    # Source nodes
-    source_ids = []
-    for i, src in enumerate(sources):
-        nid = f"SRC{i}"
-        source_ids.append(nid)
-        lbl = (src.label or src.type_name or src.type)[:40]
-        lines.append(f'    {nid}["{lbl}"]')
-
-    # Pipeline / transform node
     pipe_name = pipeline.get("name", "Pipeline") if pipeline else "Pipeline"
-    lines.append(f'    PIPE["{pipe_name[:40]}"]')
 
-    # Target / spec output node
-    lines.append('    SPEC["Generated Spec"]')
+    # Build id→label map and human-readable values summary (skip NOT_FOUND / short noise)
+    _NF = {"not_found", "not found", "non identifié", "non identifie", "n/a", "[à compléter]", ""}
+    id_to_label = {ph["id"]: ph.get("label", ph["id"]) for ph in placeholders}
+    value_lines = []
+    for fid, val in confirmed_values.items():
+        if not val:
+            continue
+        v = str(val).strip()
+        if v.lower() in _NF or v.lower().startswith("not_found"):
+            continue
+        label = id_to_label.get(fid, fid)
+        if len(v) > 400:
+            v = v[:400] + "…"
+        value_lines.append(f"- {label}: {v}")
 
-    # Edges: sources → pipeline
-    for sid in source_ids:
-        lines.append(f"    {sid} --> PIPE")
+    values_summary = "\n".join(value_lines) if value_lines else "Aucune valeur extraite."
 
-    # Edge: pipeline → spec
-    lines.append("    PIPE --> SPEC")
+    system_prompt = (
+        "Tu es un expert en data engineering. Tu génères des diagrammes Mermaid qui représentent "
+        "le FLUX DE DONNÉES RÉEL d'un pipeline (sources → transformations → destinations).\n"
+        "Tu génères UNIQUEMENT le code Mermaid brut, sans balises markdown (pas de ```), "
+        "sans commentaires ni explication."
+    )
 
-    # Optionally show extracted key fields as sub-nodes
-    key_values = {k: v for k, v in confirmed_values.items() if v and len(str(v)) < 80}
-    if key_values and len(key_values) <= 8:
-        for i, (k, v) in enumerate(list(key_values.items())[:8]):
-            ph = next((p for p in placeholders if p.get("id") == k), None)
-            label = ph.get("label", k) if ph else k
-            nid = f"VAL{i}"
-            lines.append(f'    {nid}(("{label[:25]}"))')
-            lines.append(f"    PIPE --> {nid}")
-            lines.append(f"    {nid} --> SPEC")
+    user_prompt = (
+        f"Génère un diagramme Mermaid 'flowchart LR' pour le pipeline : \"{pipe_name}\".\n\n"
+        f"Voici les valeurs extraites de l'analyse du code source :\n{values_summary}\n\n"
+        "Instructions :\n"
+        "- Le diagramme doit montrer le FLUX DE DONNÉES RÉEL du pipeline "
+        "(systèmes/fichiers/bases en entrée → étapes de traitement → systèmes/fichiers/bases en sortie).\n"
+        "- Identifie les SOURCES (applications, APIs, tables SQL, fichiers en entrée) à partir des champs "
+        "'Application source', 'Connectivité d'entrée', 'Nom de la table', etc.\n"
+        "- Identifie les étapes de TRAITEMENT/TRANSFORMATION à partir des champs "
+        "'Transformation', 'Règle de transformation', 'Traitement', nom du pipeline, etc.\n"
+        "- Identifie les DESTINATIONS (applications, emails, fichiers en sortie, SFTP) à partir des champs "
+        "'Application cible', 'Connectivité de sortie', 'Nom du fichier cible', etc.\n"
+        "- Utilise des labels courts et lisibles (40 caractères max par nœud).\n"
+        "- Applique ces styles CSS Mermaid :\n"
+        "    style NODEID fill:#10b981,color:#fff,stroke:none  (pour les sources)\n"
+        "    style NODEID fill:#FF2D78,color:#fff,stroke:none  (pour les traitements)\n"
+        "    style NODEID fill:#6366f1,color:#fff,stroke:none  (pour les destinations)\n"
+        "- 4 à 12 nœuds maximum. Ne montre PAS la génération du document de spec.\n"
+        "- Retourne UNIQUEMENT le code Mermaid commençant par 'flowchart LR'."
+    )
 
-    # Styles
-    lines.append("    style PIPE fill:#FF2D78,color:#fff,stroke:none")
-    lines.append("    style SPEC fill:#6366f1,color:#fff,stroke:none")
-
-    mermaid_code = "\n".join(lines)
+    try:
+        from app.agents.llm_client import get_llm_client
+        llm = get_llm_client()
+        mermaid_code = llm.generate(user_prompt, system_prompt=system_prompt)
+        # Strip markdown code fences if the LLM wrapped the output
+        mermaid_code = mermaid_code.strip()
+        for fence in ("```mermaid", "```"):
+            if mermaid_code.startswith(fence):
+                mermaid_code = mermaid_code[len(fence):].lstrip("\n")
+        if mermaid_code.endswith("```"):
+            mermaid_code = mermaid_code[:-3].rstrip()
+        if not mermaid_code.strip().startswith("flowchart"):
+            mermaid_code = "flowchart LR\n" + mermaid_code
+    except Exception as _diag_exc:
+        logger.warning("Diagram LLM generation failed: %s", _diag_exc)
+        # Minimal fallback
+        mermaid_code = (
+            f"flowchart LR\n"
+            f'    SRC["Source"]\n'
+            f'    PIPE["{pipe_name[:40]}"]\n'
+            f'    DST["Destination"]\n'
+            f"    SRC --> PIPE --> DST\n"
+            f"    style PIPE fill:#FF2D78,color:#fff,stroke:none\n"
+            f"    style DST fill:#6366f1,color:#fff,stroke:none\n"
+            f"    style SRC fill:#10b981,color:#fff,stroke:none"
+        )
 
     return {"mermaid": mermaid_code, "pipeline_name": pipe_name}
+
+
+@router.post("/projects/{project_id}/pipeline/diagram/approve")
+async def approve_diagram(project_id: str, req: ApproveDiagramRequest):
+    """Save / approve the current diagram under the given flux name."""
+    state = _pipeline_state.get(project_id)
+    if not state:
+        raise HTTPException(status_code=400, detail="Run extract step first.")
+    diagrams: list = state.setdefault("approved_diagrams", [])
+    # Replace any existing entry with the same flux_name
+    diagrams = [d for d in diagrams if d.get("flux_name") != req.flux_name.strip()]
+    entry = {
+        "id": _uuid.uuid4().hex[:8],
+        "flux_name": req.flux_name.strip(),
+        "mermaid_code": req.mermaid_code,
+        "approved_at": _now(),
+    }
+    diagrams.insert(0, entry)
+    state["approved_diagrams"] = diagrams
+    _persist_state()
+    return entry
+
+
+@router.get("/projects/{project_id}/pipeline/approved-diagrams")
+async def get_approved_diagrams(project_id: str):
+    state = _pipeline_state.get(project_id)
+    if not state:
+        return {"diagrams": []}
+    return {"diagrams": state.get("approved_diagrams", [])}
 
 
 @router.post("/projects/{project_id}/pipeline/export")
@@ -2986,6 +3047,52 @@ async def pipeline_step_export(project_id: str, req: ExportRequest, db=Depends(g
 
     spec_text = state["spec"]
     fmt = req.format.lower()
+
+    if fmt == "pdf":
+        try:
+            from fpdf import FPDF
+            from fastapi.responses import Response as _FResponse
+
+            pdf = FPDF()
+            pdf.set_auto_page_break(auto=True, margin=10)
+            pdf.add_page()
+            pdf.set_font("Helvetica", size=10)
+            
+            # Split spec by lines and add to PDF
+            for line in spec_text.split('\n'):
+                line = line.strip()
+                if not line:
+                    pdf.ln(5)  # blank line = 5mm vertical space
+                elif line.startswith('# '):
+                    pdf.set_font("Helvetica", 'B', 14)
+                    pdf.cell(0, 10, line[2:], ln=True)
+                    pdf.set_font("Helvetica", size=10)
+                elif line.startswith('## '):
+                    pdf.set_font("Helvetica", 'B', 12)
+                    pdf.cell(0, 10, line[3:], ln=True)
+                    pdf.set_font("Helvetica", size=10)
+                elif line.startswith('### '):
+                    pdf.set_font("Helvetica", 'B', 11)
+                    pdf.cell(0, 10, line[4:], ln=True)
+                    pdf.set_font("Helvetica", size=10)
+                elif line.startswith('- '):
+                    pdf.cell(5, 7, '')
+                    pdf.multi_cell(0, 7, line[2:], new_x="LMARGIN", new_y="NEXT")
+                elif line.startswith('| '):
+                    # Markdown table line — just show as plain text
+                    pdf.multi_cell(0, 7, line, new_x="LMARGIN", new_y="NEXT")
+                else:
+                    pdf.multi_cell(0, 7, line, new_x="LMARGIN", new_y="NEXT")
+            
+            pdf_bytes = pdf.output()
+            safe_name = (p.name or "spec").replace(" ", "_").replace("/", "-")
+            return _FResponse(
+                content=bytes(pdf_bytes),
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="{safe_name}_spec.pdf"'},
+            )
+        except Exception as _pdf_exc:
+            raise HTTPException(status_code=500, detail=f"PDF generation failed: {_pdf_exc}")
 
     if fmt == "json":
         return {
@@ -3013,6 +3120,82 @@ async def pipeline_step_export(project_id: str, req: ExportRequest, db=Depends(g
             "format": "markdown",
             "data": spec_text,
         }
+
+
+@router.post("/projects/{project_id}/export/push-github")
+async def push_spec_to_github(
+    project_id: str,
+    req: GitHubPushRequest,
+    db=Depends(get_db),
+):
+    """Push the approved spec (MD) + approved diagrams (.mmd) to a GitHub repository."""
+    p = db.query(Project).filter(Project.id == project_id).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    state = _pipeline_state.get(project_id)
+    if not state or not state.get("spec"):
+        raise HTTPException(status_code=400, detail="No spec to export. Complete the pipeline first.")
+
+    github_srv = connections.get("github")
+    if not github_srv:
+        raise HTTPException(status_code=400, detail="GitHub not connected. Connect GitHub first.")
+
+    # Normalize: accept full URLs like https://github.com/owner/repo.git
+    raw = req.repo_full_name.strip()
+    raw = re.sub(r"^https?://github\.com/", "", raw)  # strip URL prefix
+    raw = re.sub(r"\.git$", "", raw)                  # strip .git suffix
+    parts = raw.split("/", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        raise HTTPException(status_code=400, detail="repo_full_name must be 'owner/repo'")
+    owner, repo_name = parts
+
+    safe_name = (p.name or project_id).replace(" ", "_").replace("/", "-")
+    folder = req.folder_path.strip("/").strip() if req.folder_path else "specs"
+    if not folder:
+        folder = "specs"
+    branch = req.branch or "main"
+
+    pushed: list[str] = []
+    errors: list[str] = []
+
+    # Push spec.md
+    try:
+        file_path = f"{folder}/{safe_name}.md" if folder else f"{safe_name}.md"
+        github_srv.push_file(
+            owner, repo_name,
+            file_path,
+            state["spec"],
+            f"chore: add/update spec — {p.name}",
+            branch,
+        )
+        pushed.append(file_path)
+    except Exception as exc:
+        errors.append(f"spec: {str(exc)}")
+
+    # Push approved diagrams (.mmd files)
+    for diag in state.get("approved_diagrams", []):
+        flux = diag.get("flux_name", "diagram").replace(" ", "_").replace("/", "-")
+        try:
+            diag_path = f"{folder}/diagrams/{flux}.mmd" if folder else f"diagrams/{flux}.mmd"
+            github_srv.push_file(
+                owner, repo_name,
+                diag_path,
+                diag["mermaid_code"],
+                f"chore: add/update diagram — {diag.get('flux_name', flux)}",
+                branch,
+            )
+            pushed.append(diag_path)
+        except Exception as exc:
+            errors.append(f"diagram {flux}: {str(exc)}")
+
+    return {
+        "pushed": pushed,
+        "errors": errors,
+        "repo": f"{owner}/{repo_name}",
+        "branch": branch,
+    }
+
 
 
 @router.get("/projects/{project_id}/pipeline/state")
@@ -3265,14 +3448,19 @@ async def project_chat(project_id: str, req: ProjectChatRequest, db=Depends(get_
 def _load_presets() -> list:
     try:
         if _PRESETS_FILE.exists():
-            return json.loads(_PRESETS_FILE.read_text())
+            text = _PRESETS_FILE.read_text(encoding="utf-8").strip()
+            if text:
+                return json.loads(text)
     except Exception:
         pass
     return []
 
 def _save_presets(presets: list) -> None:
+    """Atomic write: write to a temp file then rename to avoid corruption on crash."""
     try:
-        _PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False))
+        tmp = _PRESETS_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(presets, indent=2, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(_PRESETS_FILE)
     except Exception as exc:
         logger.warning("Could not save presets: %s", exc)
 
